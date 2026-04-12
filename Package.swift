@@ -10,16 +10,7 @@ let package = Package(
     targets: [
         .target(
             name: "NativeAudioBridgeLibrary",
-            dependencies: [],
-            path: "Sources/NativeAudioBridge",
-            swiftSettings: [
-                .unsafeFlags(["-parse-as-library"])
-            ]
-        ),
-        .executableTarget(
-            name: "NativeAudioBridge",
-            dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Sources/NativeAudioBridgeApp"
+            path: "Sources/NativeAudioBridge"
         ),
         .testTarget(
             name: "NativeAudioBridgeTests",

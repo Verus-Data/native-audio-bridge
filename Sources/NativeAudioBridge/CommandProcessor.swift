@@ -5,6 +5,13 @@ public struct DispatchPayload: Encodable {
     public let name: String
     public let agentId: String
     public let wakeMode: String
+
+    public init(message: String, name: String, agentId: String, wakeMode: String) {
+        self.message = message
+        self.name = name
+        self.agentId = agentId
+        self.wakeMode = wakeMode
+    }
 }
 
 public final class CommandProcessor {

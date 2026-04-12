@@ -54,7 +54,7 @@ public final class CommandBuffer {
         lastAudioLevel = rms
         onAudioLevel?(rms)
 
-        if isCapturing {
+        if capturing {
             processSilenceDetection(audioLevel: rms)
         }
     }
