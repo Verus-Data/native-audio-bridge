@@ -8,7 +8,8 @@ struct AudioBridgeApp {
     static func main() async {
         let log = Logger.shared
 
-        let configPath = parseConfigPath(from: CommandLine.arguments)
+        let (configPath, shouldExit) = parseArguments(from: CommandLine.arguments)
+        guard !shouldExit else { return }
 
         let configManager = ConfigurationManager()
         let config: Configuration
@@ -179,15 +180,56 @@ struct AudioBridgeApp {
         log.info("Audio bridge stopped.")
     }
 
-    private static func parseConfigPath(from arguments: [String]) -> String? {
-        var iter = arguments.makeIterator()
-        _ = iter.next()
+    private static func parseArguments(from args: [String]) -> (configPath: String?, shouldExit: Bool) {
+        var iter = args.makeIterator()
+        _ = iter.next() // skip program name
+        var configPath: String?
+
         while let arg = iter.next() {
-            if arg == "--config" {
-                return iter.next()
+            switch arg {
+            case "--help", "-h":
+                printUsage()
+                return (nil, true)
+            case "--version", "-v":
+                print("Native Audio Bridge v\(AppVersion.current)")
+                return (nil, true)
+            case "--config", "-c":
+                configPath = iter.next()
+            default:
+                print("Unknown argument: \(arg)")
+                printUsage()
+                return (nil, true)
             }
         }
-        return nil
+        return (configPath, false)
+    }
+
+    private static func printUsage() {
+        print("""
+        Native Audio Bridge v\(AppVersion.current)
+
+        USAGE:
+          NativeAudioBridge [OPTIONS]
+
+        OPTIONS:
+          --config, -c <path>   Path to YAML configuration file
+          --help,    -h         Show this help message
+          --version, -v         Print version and exit
+
+        CONFIGURATION:
+          Environment variables (highest priority):
+            NATIVE_AUDIO_BRIDGE_TOKEN            Bearer token for webhook auth (required)
+            NATIVE_AUDIO_BRIDGE_HOT_WORD         Hot word phrase (default: "hey claW")
+            NATIVE_AUDIO_BRIDGE_SILENCE_TIMEOUT   Silence timeout in ms (default: 1500)
+            NATIVE_AUDIO_BRIDGE_SILENCE_THRESHOLD  RMS threshold for silence (default: 0.01)
+            NATIVE_AUDIO_BRIDGE_WEBHOOK_URL       Webhook endpoint (default: https://gateway.openclaw.io/hooks/agent)
+            NATIVE_AUDIO_BRIDGE_LOG_LEVEL         Log level: debug|info|error (default: info)
+
+          Config file (lower priority, YAML format):
+            hot_word, silence_timeout, silence_threshold, webhook_url, webhook_token, log_level
+
+          Priority: env vars > config file > defaults
+        """)
     }
 
     private static func requestMicrophonePermission() async -> Bool {

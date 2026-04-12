@@ -107,8 +107,9 @@ public final class ConfigurationManager {
         guard !config.webhookURL.isEmpty else {
             throw ConfigurationError.missingRequiredField("webhookURL")
         }
-        guard URL(string: config.webhookURL) != nil else {
-            throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL")
+        guard let webhookURL = URL(string: config.webhookURL),
+              webhookURL.scheme != nil else {
+            throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL with scheme")
         }
         guard !config.webhookToken.isEmpty else {
             throw ConfigurationError.missingRequiredField("webhookToken (set NATIVE_AUDIO_BRIDGE_TOKEN or configure webhook_token)")

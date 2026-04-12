@@ -1,6 +1,9 @@
 // swift-tools-version:5.9
 import PackageDescription
 
+// Semantic version — update via semantic-release on merge to main
+let currentVersion = "0.1.0"
+
 let package = Package(
     name: "NativeAudioBridge",
     platforms: [
@@ -23,13 +26,10 @@ let package = Package(
                 .unsafeFlags(["-parse-as-library"])
             ]
         ),
-        .executableTarget(
+        .testTarget(
             name: "NativeAudioBridgeTests",
             dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Sources/NativeAudioBridgeTests",
-            swiftSettings: [
-                .unsafeFlags(["-parse-as-library"])
-            ]
+            path: "Sources/NativeAudioBridgeTests"
         )
     ],
     swiftLanguageVersions: [.v5]
