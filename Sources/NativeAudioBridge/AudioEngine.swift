@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-final class AudioEngine {
+public final class AudioEngine {
     private let engine = AVAudioEngine()
     private let sampleRate: Double = 16000
     private let bufferSize: AVAudioFrameCount = 1024
@@ -11,13 +11,13 @@ final class AudioEngine {
     private let maxBufferMemoryMB: Int = 80
     private var onAudioBuffer: ((Data) -> Void)?
 
-    var sampleRateValue: Double { sampleRate }
+    public var sampleRateValue: Double { sampleRate }
 
-    func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
+    public func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
         onAudioBuffer = handler
     }
 
-    func start() throws {
+    public func start() throws {
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
@@ -39,29 +39,29 @@ final class AudioEngine {
         isCapturing = true
     }
 
-    func stop() {
+    public func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isCapturing = false
         clearBuffers()
     }
 
-    func getBuffers() -> [Data] {
+    public func getBuffers() -> [Data] {
         bufferQueue.sync { self.audioBuffers }
     }
 
-    func clearBuffers() {
+    public func clearBuffers() {
         bufferQueue.async(flags: .barrier) { [weak self] in
             self?.audioBuffers.removeAll()
         }
     }
 
-    var currentBufferMemoryMB: Int {
+    public var currentBufferMemoryMB: Int {
         let totalBytes = bufferQueue.sync { self.audioBuffers.reduce(0) { $0 + $1.count } }
         return totalBytes / (1024 * 1024)
     }
 
-    var isRunning: Bool { engine.isRunning }
+    public var isRunning: Bool { engine.isRunning }
 
     private func processAudioBuffer(
         _ buffer: AVAudioPCMBuffer,

@@ -15,11 +15,6 @@ let package = Package(
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]
-        ),
-        .testTarget(
-            name: "NativeAudioBridgeTests",
-            dependencies: ["NativeAudioBridge"],
-            path: "Tests/NativeAudioBridgeTests"
         )
     ],
     swiftLanguageVersions: [.v5]

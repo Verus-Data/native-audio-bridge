@@ -4,21 +4,16 @@ import Foundation
 @main
 struct AudioBridgeApp {
     static func main() async {
-        let app = AudioBridgeApp()
-        await app.run()
-    }
+        let audioEngine = AudioEngine()
+        let stateManager = StateManager()
+        let keepAlive = DispatchGroup()
 
-    private let audioEngine = AudioEngine()
-    private let stateManager = StateManager()
-    private let keepAlive = DispatchGroup()
-
-    private func run() async {
         stateManager.setOnStateChange { oldState, newState in
             print("[\(oldState) → \(newState)]")
         }
 
         audioEngine.setOnAudioBuffer { data in
-            let rms = self.calculateRMS(from: data)
+            let rms = Self.calculateRMS(from: data)
             if rms > 0.01 {
                 print("Audio sample: \(data.count) bytes, RMS: \(String(format: "%.4f", rms))")
             }
@@ -47,20 +42,20 @@ struct AudioBridgeApp {
 
         signal(SIGINT, SIG_IGN)
         let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        signalSource.setEventHandler { [weak self] in
+        signalSource.setEventHandler {
             print("\nShutting down...")
-            self?.audioEngine.stop()
-            self?.keepAlive.leave()
+            audioEngine.stop()
+            keepAlive.leave()
         }
         signalSource.resume()
 
         keepAlive.enter()
-        keepAlive.wait()
+        _ = keepAlive.wait(timeout: .distantFuture)
 
         print("Audio bridge stopped.")
     }
 
-    private func requestMicrophonePermission() async -> Bool {
+    private static func requestMicrophonePermission() async -> Bool {
         await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 continuation.resume(returning: granted)
@@ -68,7 +63,7 @@ struct AudioBridgeApp {
         }
     }
 
-    private func calculateRMS(from data: Data) -> Float {
+    private static func calculateRMS(from data: Data) -> Float {
         guard data.count >= MemoryLayout<Float>.size else { return 0.0 }
         let floatCount = data.count / MemoryLayout<Float>.size
         var sum: Float = 0.0
