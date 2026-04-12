@@ -7,27 +7,26 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NativeAudioBridge", targets: ["NativeAudioBridge"]),
-        .executable(name: "NativeAudioBridgeTests", targets: ["NativeAudioBridgeTests"]),
+        .executable(name: "NativeAudioBridge", targets: ["NativeAudioBridge"])
     ],
     dependencies: [],
     targets: [
         .target(
             name: "NativeAudioBridgeLibrary",
-            path: "Sources/NativeAudioBridge",
+            path: "Sources/NativeAudioBridge"
+        ),
+        .executableTarget(
+            name: "NativeAudioBridge",
+            dependencies: ["NativeAudioBridgeLibrary"],
+            path: "Sources/NativeAudioBridgeApp",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]
         ),
         .executableTarget(
-            name: "NativeAudioBridge",
-            dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Sources/NativeAudioBridgeApp"
-        ),
-        .executableTarget(
             name: "NativeAudioBridgeTests",
             dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Tests/NativeAudioBridgeTests",
+            path: "Sources/NativeAudioBridgeTests",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]

@@ -53,17 +53,16 @@ public final class WebhookDispatcher {
             do {
                 let success = try await sendRequest(payload: payload)
                 if success {
-                    print("[WebhookDispatcher] Dispatch succeeded on attempt \(attempt + 1)")
+                    Logger.shared.debug("Dispatch succeeded on attempt \(attempt + 1)")
                     return true
                 }
             } catch {
                 lastError = error
-                print("[WebhookDispatcher] Attempt \(attempt + 1) failed: \(error.localizedDescription)")
-            }
+                Logger.shared.error("Attempt \(attempt + 1) failed: \(error.localizedDescription)")}
 
             if attempt < maxRetries - 1 {
                 let delayMs = baseDelayMs * (1 << attempt)
-                print("[WebhookDispatcher] Retrying in \(delayMs)ms...")
+                Logger.shared.debug("Retrying in \(delayMs)ms...")
                 try await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
             }
         }

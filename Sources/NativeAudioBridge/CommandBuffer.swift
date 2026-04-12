@@ -10,7 +10,7 @@ public final class CommandBuffer {
     private let silenceThreshold: Float
     private var silenceStartTime: Date?
     private var lastAudioLevel: Float = 0
-    private var silenceTimer: DispatchSourceTimer?
+    private var silenceCheckTimer: DispatchSourceTimer?
 
     public var onSilenceDetected: (() -> Void)?
     public var onAudioLevel: ((Float) -> Void)?
@@ -28,40 +28,47 @@ public final class CommandBuffer {
             self.silenceStartTime = nil
             self.lastAudioLevel = 0
         }
-        startSilenceTimer()
-        print("[CommandBuffer] Capture started")
+        startSilenceCheckTimer()
+        Logger.shared.debug("Capture started")
     }
 
     public func stopCapture() {
-        stopSilenceTimer()
+        stopSilenceCheckTimer()
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
             self.isCapturing = false
             self.silenceStartTime = nil
         }
-        print("[CommandBuffer] Capture stopped")
+        Logger.shared.debug("Capture stopped")
     }
 
     public func append(_ data: Data) {
         let shouldProcess = bufferQueue.sync { isCapturing }
+        let rms = calculateRMS(from: data)
 
-        bufferQueue.async(flags: .barrier) { [weak self] in
-            guard let self, self.isCapturing else { return }
-            if self.currentBufferMemoryMB < self.maxBufferMemoryMB {
-                self.buffers.append(data)
-            } else {
-                self.buffers.removeFirst()
-                self.buffers.append(data)
+        if shouldProcess {
+            bufferQueue.async(flags: .barrier) { [weak self] in
+                guard let self, self.isCapturing else { return }
+                let totalBytes = self.buffers.reduce(0) { $0 + $1.count }
+                let memoryMB = totalBytes / (1024 * 1024)
+                if memoryMB < self.maxBufferMemoryMB {
+                    self.buffers.append(data)
+                } else {
+                    self.buffers.removeFirst()
+                    self.buffers.append(data)
+                }
+                if rms < self.silenceThreshold {
+                    if self.silenceStartTime == nil {
+                        self.silenceStartTime = Date()
+                    }
+                } else {
+                    self.silenceStartTime = nil
+                }
             }
         }
 
-        let rms = calculateRMS(from: data)
         lastAudioLevel = rms
         onAudioLevel?(rms)
-
-        if shouldProcess {
-            processSilenceDetection(audioLevel: rms)
-        }
     }
 
     public func appendBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -79,11 +86,6 @@ public final class CommandBuffer {
         bufferQueue.async(flags: .barrier) { [weak self] in
             self?.buffers.removeAll()
         }
-    }
-
-    public var currentBufferMemoryMB: Int {
-        let totalBytes = bufferQueue.sync { buffers.reduce(0) { $0 + $1.count } }
-        return totalBytes / (1024 * 1024)
     }
 
     public var capturing: Bool {
@@ -108,45 +110,36 @@ public final class CommandBuffer {
         return sqrt(mean)
     }
 
-    public func processSilenceDetection(audioLevel: Float) {
-        bufferQueue.async(flags: .barrier) { [weak self] in
-            guard let self else { return }
-            if audioLevel < self.silenceThreshold {
-                if self.silenceStartTime == nil {
-                    self.silenceStartTime = Date()
-                }
-            } else {
-                self.silenceStartTime = nil
-            }
-        }
-    }
-
-    private func startSilenceTimer() {
-        stopSilenceTimer()
+    private func startSilenceCheckTimer() {
+        stopSilenceCheckTimer()
         let timer = DispatchSource.makeTimerSource(queue: bufferQueue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(100))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            self.bufferQueue.async(flags: .barrier) { [weak self] in
-                guard let self, self.isCapturing else { return }
-                guard let startTime = self.silenceStartTime else { return }
-                let elapsed = Date().timeIntervalSince(startTime)
-                let timeoutInterval = Double(self.silenceTimeoutMs) / 1000.0
-                if elapsed >= timeoutInterval {
-                    self.isCapturing = false
-                    self.silenceStartTime = nil
-                    self.silenceTimer?.cancel()
-                    self.silenceTimer = nil
-                    self.onSilenceDetected?()
-                }
-            }
+            self.checkSilenceTimeout()
         }
         timer.resume()
-        silenceTimer = timer
+        silenceCheckTimer = timer
     }
 
-    private func stopSilenceTimer() {
-        silenceTimer?.cancel()
-        silenceTimer = nil
+    private func stopSilenceCheckTimer() {
+        silenceCheckTimer?.cancel()
+        silenceCheckTimer = nil
+    }
+
+    private func checkSilenceTimeout() {
+        bufferQueue.async(flags: .barrier) { [weak self] in
+            guard let self, self.isCapturing else { return }
+            guard let startTime = self.silenceStartTime else { return }
+            let elapsed = Date().timeIntervalSince(startTime)
+            let timeoutInterval = Double(self.silenceTimeoutMs) / 1000.0
+            if elapsed >= timeoutInterval {
+                self.isCapturing = false
+                self.silenceStartTime = nil
+                self.silenceCheckTimer?.cancel()
+                self.silenceCheckTimer = nil
+                self.onSilenceDetected?()
+            }
+        }
     }
 }
