@@ -8,13 +8,23 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
-        .executableTarget(
-            name: "NativeAudioBridge",
+        .target(
+            name: "NativeAudioBridgeLibrary",
             dependencies: [],
             path: "Sources/NativeAudioBridge",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]
+        ),
+        .executableTarget(
+            name: "NativeAudioBridge",
+            dependencies: ["NativeAudioBridgeLibrary"],
+            path: "Sources/NativeAudioBridgeApp"
+        ),
+        .testTarget(
+            name: "NativeAudioBridgeTests",
+            dependencies: ["NativeAudioBridgeLibrary"],
+            path: "Tests/NativeAudioBridgeTests"
         )
     ],
     swiftLanguageVersions: [.v5]
