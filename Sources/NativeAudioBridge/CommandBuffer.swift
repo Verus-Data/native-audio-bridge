@@ -10,6 +10,7 @@ public final class CommandBuffer {
     private let silenceThreshold: Float
     private var silenceStartTime: Date?
     private var lastAudioLevel: Float = 0
+    private var silenceTimer: DispatchSourceTimer?
 
     public var onSilenceDetected: (() -> Void)?
     public var onAudioLevel: ((Float) -> Void)?
@@ -27,10 +28,12 @@ public final class CommandBuffer {
             self.silenceStartTime = nil
             self.lastAudioLevel = 0
         }
+        startSilenceTimer()
         print("[CommandBuffer] Capture started")
     }
 
     public func stopCapture() {
+        stopSilenceTimer()
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
             self.isCapturing = false
@@ -112,16 +115,38 @@ public final class CommandBuffer {
                 if self.silenceStartTime == nil {
                     self.silenceStartTime = Date()
                 }
-                let elapsed = Date().timeIntervalSince(self.silenceStartTime!)
-                let timeoutInterval = Double(self.silenceTimeoutMs) / 1000.0
-                if elapsed >= timeoutInterval {
-                    self.isCapturing = false
-                    self.silenceStartTime = nil
-                    self.onSilenceDetected?()
-                }
             } else {
                 self.silenceStartTime = nil
             }
         }
+    }
+
+    private func startSilenceTimer() {
+        stopSilenceTimer()
+        let timer = DispatchSource.makeTimerSource(queue: bufferQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.bufferQueue.async(flags: .barrier) { [weak self] in
+                guard let self, self.isCapturing else { return }
+                guard let startTime = self.silenceStartTime else { return }
+                let elapsed = Date().timeIntervalSince(startTime)
+                let timeoutInterval = Double(self.silenceTimeoutMs) / 1000.0
+                if elapsed >= timeoutInterval {
+                    self.isCapturing = false
+                    self.silenceStartTime = nil
+                    self.silenceTimer?.cancel()
+                    self.silenceTimer = nil
+                    self.onSilenceDetected?()
+                }
+            }
+        }
+        timer.resume()
+        silenceTimer = timer
+    }
+
+    private func stopSilenceTimer() {
+        silenceTimer?.cancel()
+        silenceTimer = nil
     }
 }

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import NativeAudioBridgeLibrary
 import Speech
 
 @main
@@ -9,7 +10,23 @@ struct AudioBridgeApp {
         let stateManager = StateManager()
         let speechRecognizer = SpeechRecognizer()
         let hotWordDetector = HotWordDetector()
+        let commandBuffer = CommandBuffer(silenceTimeoutMs: 1500, silenceThreshold: 0.01)
+        let commandProcessor = CommandProcessor()
         let keepAlive = DispatchGroup()
+
+        let webhookURL = "https://gateway.openclaw.io/hooks/agent"
+        let webhookToken = ProcessInfo.processInfo.environment["NATIVE_AUDIO_BRIDGE_TOKEN"] ?? ""
+
+        var webhookDispatcher: WebhookDispatcher?
+        do {
+            webhookDispatcher = try WebhookDispatcher(
+                webhookURL: webhookURL,
+                bearerToken: webhookToken
+            )
+        } catch {
+            print("ERROR: Invalid webhook configuration: \(error)")
+            return
+        }
 
         stateManager.setOnStateChange { oldState, newState in
             print("[\(oldState) → \(newState)]")
@@ -18,6 +35,35 @@ struct AudioBridgeApp {
         hotWordDetector.onHotWordDetected = {
             print("🔥 Hot word detected! Transitioning to listening...")
             stateManager.transition(to: .listening)
+            commandBuffer.startCapture()
+        }
+
+        commandBuffer.onSilenceDetected = {
+            print("⏸ Silence detected. Processing command...")
+            stateManager.transition(to: .processing)
+
+            let transcript = speechRecognizer.currentTranscript
+            commandBuffer.stopCapture()
+
+            guard let payload = commandProcessor.preparePayload(transcript: transcript) else {
+                print("Empty command after processing. Returning to idle.")
+                stateManager.transition(to: .idle)
+                hotWordDetector.reset()
+                return
+            }
+
+            stateManager.transition(to: .dispatching)
+
+            Task {
+                do {
+                    try await webhookDispatcher?.dispatch(payload: payload)
+                    print("✅ Command dispatched successfully")
+                } catch {
+                    print("ERROR: Webhook dispatch failed: \(error)")
+                }
+                stateManager.transition(to: .idle)
+                hotWordDetector.reset()
+            }
         }
 
         speechRecognizer.onPartialResult = { transcript in
@@ -29,12 +75,39 @@ struct AudioBridgeApp {
 
         speechRecognizer.onFinalResult = { transcript in
             print("  Final transcript: \(transcript)")
-            stateManager.transition(to: .processing)
-            print("  Command: \(transcript)")
+            if !commandBuffer.capturing {
+                stateManager.transition(to: .processing)
+
+                guard let payload = commandProcessor.preparePayload(transcript: transcript) else {
+                    print("Empty command after processing. Returning to idle.")
+                    stateManager.transition(to: .idle)
+                    hotWordDetector.reset()
+                    return
+                }
+
+                stateManager.transition(to: .dispatching)
+
+                Task {
+                    do {
+                        try await webhookDispatcher?.dispatch(payload: payload)
+                        print("✅ Command dispatched successfully")
+                    } catch {
+                        print("ERROR: Webhook dispatch failed: \(error)")
+                    }
+                    stateManager.transition(to: .idle)
+                    hotWordDetector.reset()
+                }
+            }
         }
 
         speechRecognizer.onError = { error in
             print("Speech recognition error: \(error.localizedDescription)")
+        }
+
+        audioEngine.setOnAudioBuffer { data in
+            if commandBuffer.capturing {
+                commandBuffer.append(data)
+            }
         }
 
         print("Native Audio Bridge starting...")
@@ -82,6 +155,7 @@ struct AudioBridgeApp {
             print("\nShutting down...")
             speechRecognizer.stopStreaming()
             audioEngine.stop()
+            commandBuffer.stopCapture()
             keepAlive.leave()
         }
         signalSource.resume()

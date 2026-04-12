@@ -3,6 +3,8 @@ import Foundation
 
 public final class AudioEngine {
     private let engine = AVAudioEngine()
+
+    public init() {}
     private let sampleRate: Double = 16000
     private let bufferSize: AVAudioFrameCount = 1024
     private var audioBuffers: [Data] = []
