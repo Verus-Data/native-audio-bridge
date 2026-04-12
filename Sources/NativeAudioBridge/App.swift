@@ -1,34 +1,60 @@
 import AVFoundation
 import Foundation
+import Speech
 
 @main
 struct AudioBridgeApp {
     static func main() async {
         let audioEngine = AudioEngine()
         let stateManager = StateManager()
+        let speechRecognizer = SpeechRecognizer()
+        let hotWordDetector = HotWordDetector()
         let keepAlive = DispatchGroup()
 
         stateManager.setOnStateChange { oldState, newState in
             print("[\(oldState) → \(newState)]")
         }
 
-        audioEngine.setOnAudioBuffer { data in
-            let rms = Self.calculateRMS(from: data)
-            if rms > 0.01 {
-                print("Audio sample: \(data.count) bytes, RMS: \(String(format: "%.4f", rms))")
+        hotWordDetector.onHotWordDetected = {
+            print("🔥 Hot word detected! Transitioning to listening...")
+            stateManager.transition(to: .listening)
+        }
+
+        speechRecognizer.onPartialResult = { transcript in
+            let detected = hotWordDetector.process(transcript: transcript)
+            if !detected, stateManager.state == .listening {
+                print("  Partial: \(transcript)")
             }
+        }
+
+        speechRecognizer.onFinalResult = { transcript in
+            print("  Final transcript: \(transcript)")
+            stateManager.transition(to: .processing)
+            print("  Command: \(transcript)")
+        }
+
+        speechRecognizer.onError = { error in
+            print("Speech recognition error: \(error.localizedDescription)")
         }
 
         print("Native Audio Bridge starting...")
         print("Requesting microphone permission...")
 
-        let authorized = await requestMicrophonePermission()
-        guard authorized else {
+        let micAuthorized = await requestMicrophonePermission()
+        guard micAuthorized else {
             print("ERROR: Microphone permission denied. Exiting.")
             return
         }
 
-        print("Microphone authorized. Starting audio engine...")
+        print("Microphone authorized. Requesting speech recognition permission...")
+
+        let speechAuthorized = await SpeechRecognizer.requestAuthorization()
+        guard speechAuthorized else {
+            print("ERROR: Speech recognition permission denied. Exiting.")
+            return
+        }
+
+        print("Speech recognition authorized. Starting audio engine...")
 
         do {
             try audioEngine.start()
@@ -40,10 +66,21 @@ struct AudioBridgeApp {
             return
         }
 
+        do {
+            let nativeEngine = AVAudioEngine()
+            try nativeEngine.start()
+            try speechRecognizer.startStreaming(audioEngine: nativeEngine)
+            print("Speech recognizer streaming started.")
+        } catch {
+            print("ERROR: Failed to start speech recognizer: \(error)")
+            print("Running in audio-only mode (hot word detection via transcripts unavailable).")
+        }
+
         signal(SIGINT, SIG_IGN)
         let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         signalSource.setEventHandler {
             print("\nShutting down...")
+            speechRecognizer.stopStreaming()
             audioEngine.stop()
             keepAlive.leave()
         }
@@ -61,19 +98,5 @@ struct AudioBridgeApp {
                 continuation.resume(returning: granted)
             }
         }
-    }
-
-    private static func calculateRMS(from data: Data) -> Float {
-        guard data.count >= MemoryLayout<Float>.size else { return 0.0 }
-        let floatCount = data.count / MemoryLayout<Float>.size
-        var sum: Float = 0.0
-        data.withUnsafeBytes { rawBuffer in
-            let floatPtr = rawBuffer.bindMemory(to: Float.self)
-            for i in 0..<floatCount {
-                let value = floatPtr[i]
-                sum += value * value
-            }
-        }
-        return sqrt(sum / Float(floatCount))
     }
 }
