@@ -40,6 +40,8 @@ public final class CommandBuffer {
     }
 
     public func append(_ data: Data) {
+        let shouldProcess = bufferQueue.sync { isCapturing }
+
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self, self.isCapturing else { return }
             if self.currentBufferMemoryMB < self.maxBufferMemoryMB {
@@ -54,7 +56,7 @@ public final class CommandBuffer {
         lastAudioLevel = rms
         onAudioLevel?(rms)
 
-        if capturing {
+        if shouldProcess {
             processSilenceDetection(audioLevel: rms)
         }
     }
@@ -115,9 +117,7 @@ public final class CommandBuffer {
                 if elapsed >= timeoutInterval {
                     self.isCapturing = false
                     self.silenceStartTime = nil
-                    DispatchQueue.main.async {
-                        self.onSilenceDetected?()
-                    }
+                    self.onSilenceDetected?()
                 }
             } else {
                 self.silenceStartTime = nil
