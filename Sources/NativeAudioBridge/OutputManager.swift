@@ -63,7 +63,7 @@ public final class OutputManager {
     }
     
     /// Output a processed command to configured destinations
-    public func output(_ payload: WebhookPayload) async throws {
+    public func output(_ payload: DispatchPayload) async throws {
         let dispatchGroup = DispatchGroup()
         var errors: [Error] = []
         
@@ -109,7 +109,7 @@ public final class OutputManager {
     }
     
     /// Append payload to JSONL file
-    private func appendToJSONL(payload: WebhookPayload, at path: URL) async throws {
+    private func appendToJSONL(payload: DispatchPayload, at path: URL) async throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = .sortedKeys
@@ -120,7 +120,7 @@ public final class OutputManager {
         }
         
         let line = jsonString + "\n"
-        guard let lineData = line.data(using: .utf8) else {
+        guard let lineData: Data = line.data(using: .utf8) else {
             throw OutputError.encodingFailed
         }
         
@@ -162,7 +162,7 @@ public enum OutputError: Error {
     case partialFailure([Error])
 }
 
-extension OutputMode: CustomStringConvertible {
+extension OutputManager.OutputMode: CustomStringConvertible {
     public var description: String {
         switch self {
         case .webhook: return "webhook"

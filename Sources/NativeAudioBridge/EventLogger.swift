@@ -86,7 +86,7 @@ public final class EventLogger {
         print("   Hot word: \"\(config.hotWord)\"")
         print("   Silence timeout: \(config.silenceTimeoutMs)ms")
         print("   Webhook: \(config.webhookURL)")
-        if let path = OutputManager(config: config, mode: .jsonlFile).jsonlFilePath() {
+        if let path = try? OutputManager(config: config, mode: .jsonlFile).jsonlFilePath() {
             print("   JSONL: \(path)")
         }
         print("")
@@ -103,7 +103,7 @@ public final class EventLogger {
     /// Log listening status (periodic heartbeat)
     public func logListeningStatus() {
         let timestamp = dateFormatter.string(from: Date())
-        print("[\(timestamp)] 👂 Listening... (say \"\(Configuration.defaultHotWord)\"")")
+        logger.info("[\(timestamp)] 👂 Listening... say \"\(ConfigurationManager.defaultHotWord)\"", category: .app)
     }
     
     /// Log shutdown
