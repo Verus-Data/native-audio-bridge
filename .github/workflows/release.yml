@@ -18,6 +18,8 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Xcode 15.4 on macOS 14 builds with the macOS 14 deployment target
+      # defined in Package.swift (platforms: [.macOS(.v14)]).
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
