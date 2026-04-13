@@ -40,7 +40,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
         let commandProcessor = CommandProcessor()
         let keepAlive = DispatchGroup()
 
-        var webhookDispatcher: WebhookDispatcher?
+        let webhookDispatcher: WebhookDispatcher
         do {
             webhookDispatcher = try WebhookDispatcher(
                 webhookURL: config.webhookURL,
@@ -79,7 +79,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
             Task {
                 do {
-                    try await webhookDispatcher?.dispatch(payload: payload)
+                    try await webhookDispatcher.dispatch(payload: payload)
                     log.info("Command dispatched successfully")
                 } catch {
                     log.error("Webhook dispatch failed: \(error.localizedDescription)")
@@ -112,7 +112,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
                 Task {
                     do {
-                        try await webhookDispatcher?.dispatch(payload: payload)
+                        try await webhookDispatcher.dispatch(payload: payload)
                         log.info("Command dispatched successfully")
                     } catch {
                         log.error("Webhook dispatch failed: \(error.localizedDescription)")
