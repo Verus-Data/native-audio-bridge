@@ -10,9 +10,9 @@ public final class SpeechRecognizer {
     private var isRunning = false
     private var lastTranscript: String = ""
 
-    public var onPartialResult: ((String) -> Void)?
-    public var onFinalResult: ((String) -> Void)?
-    public var onError: ((Error) -> Void)?
+    public var onPartialResult: (@Sendable (String) -> Void)?
+    public var onFinalResult: (@Sendable (String) -> Void)?
+    public var onError: (@Sendable (Error) -> Void)?
 
     public init(locale: Locale = Locale(identifier: "en-US")) {
         speechRecognizer = SFSpeechRecognizer(locale: locale)
@@ -55,6 +55,9 @@ public final class SpeechRecognizer {
 
         let task = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
+            let onPartial = self.onPartialResult
+            let onFinal = self.onFinalResult
+            let onErr = self.onError
             self.queue.async {
                 if let result {
                     let transcript = result.bestTranscription.formattedString
@@ -62,13 +65,13 @@ public final class SpeechRecognizer {
                         self?.lastTranscript = transcript
                     }
                     if result.isFinal {
-                        self.onFinalResult?(transcript)
+                        onFinal?(transcript)
                     } else {
-                        self.onPartialResult?(transcript)
+                        onPartial?(transcript)
                     }
                 }
                 if let error {
-                    self.onError?(error)
+                    onErr?(error)
                     self.stopStreamingInternal()
                 }
             }

@@ -11,7 +11,7 @@ public final class AudioEngine {
     private let bufferQueue = DispatchQueue(label: "com.nativeaudiobridge.audiobuffer", attributes: .concurrent)
     private var isCapturing = false
     private let maxBufferMemoryMB: Int = 80
-    private var onAudioBuffer: ((Data) -> Void)?
+    private var onAudioBuffer: (@Sendable (Data) -> Void)?
 
     public var sampleRateValue: Double { sampleRate }
 
@@ -88,6 +88,7 @@ public final class AudioEngine {
         guard let channelData = convertedBuffer.floatChannelData?[0] else { return }
         let data = Data(bytes: channelData, count: Int(convertedBuffer.frameLength) * MemoryLayout<Float>.size)
 
+        let onBuffer = self.onAudioBuffer
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
             if self.currentBufferMemoryMB < self.maxBufferMemoryMB {
@@ -96,8 +97,7 @@ public final class AudioEngine {
                 self.audioBuffers.removeFirst()
                 self.audioBuffers.append(data)
             }
+            onBuffer?(data)
         }
-
-        onAudioBuffer?(data)
     }
 }

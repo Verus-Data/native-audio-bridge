@@ -12,8 +12,8 @@ public final class CommandBuffer {
     private var lastAudioLevel: Float = 0
     private var silenceCheckTimer: DispatchSourceTimer?
 
-    public var onSilenceDetected: (() -> Void)?
-    public var onAudioLevel: ((Float) -> Void)?
+    public var onSilenceDetected: (@Sendable () -> Void)?
+    public var onAudioLevel: (@Sendable (Float) -> Void)?
 
     public init(silenceTimeoutMs: Int = 1500, silenceThreshold: Float = 0.01) {
         self.silenceTimeoutMs = silenceTimeoutMs
@@ -67,8 +67,9 @@ public final class CommandBuffer {
             }
         }
 
+        let currentLevel = rms
         lastAudioLevel = rms
-        onAudioLevel?(rms)
+        onAudioLevel?(currentLevel)
     }
 
     public func appendBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -128,6 +129,7 @@ public final class CommandBuffer {
     }
 
     private func checkSilenceTimeout() {
+        let onSilence = self.onSilenceDetected
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self, self.isCapturing else { return }
             guard let startTime = self.silenceStartTime else { return }
@@ -138,7 +140,7 @@ public final class CommandBuffer {
                 self.silenceStartTime = nil
                 self.silenceCheckTimer?.cancel()
                 self.silenceCheckTimer = nil
-                self.onSilenceDetected?()
+                onSilence?()
             }
         }
     }

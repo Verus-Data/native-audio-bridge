@@ -67,29 +67,33 @@ public final class OutputManager {
         typealias OutputResult = Result<Void, Error>
 
         var results: [OutputResult] = []
+        let logger = self.logger
+        let currentMode = self.mode
+        let dispatcher = self.webhookDispatcher
+        let jsonlPath = self.jsonlPath
 
         await withTaskGroup(of: OutputResult.self) { group in
-            if let dispatcher = self.webhookDispatcher, (mode == .webhook || mode == .both) {
+            if let dispatcher, (currentMode == .webhook || currentMode == .both) {
                 group.addTask {
                     do {
                         try await dispatcher.dispatch(payload: payload)
-                        self.logger.debug("Webhook dispatch succeeded", category: .webhook)
+                        logger.debug("Webhook dispatch succeeded", category: .webhook)
                         return .success(())
                     } catch {
-                        self.logger.error("Webhook dispatch failed: \(error)", category: .webhook)
+                        logger.error("Webhook dispatch failed: \(error)", category: .webhook)
                         return .failure(error)
                     }
                 }
             }
 
-            if let path = self.jsonlPath, (mode == .jsonlFile || mode == .both) {
-                group.addTask {
+            if let path = jsonlPath, (currentMode == .jsonlFile || currentMode == .both) {
+                group.addTask { [self] in
                     do {
                         try await self.appendToJSONL(payload: payload, at: path)
-                        self.logger.debug("JSONL append succeeded", category: .app)
+                        logger.debug("JSONL append succeeded", category: .app)
                         return .success(())
                     } catch {
-                        self.logger.error("JSONL append failed: \(error)", category: .app)
+                        logger.error("JSONL append failed: \(error)", category: .app)
                         return .failure(error)
                     }
                 }

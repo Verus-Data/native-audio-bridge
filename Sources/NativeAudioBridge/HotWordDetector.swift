@@ -12,7 +12,7 @@ public final class HotWordDetector {
     private let queue = DispatchQueue(label: "com.nativeaudiobridge.hotword", attributes: .concurrent)
     public private(set) var state: HotWordDetectorState = .idle
 
-    public var onHotWordDetected: (() -> Void)?
+    public var onHotWordDetected: (@Sendable () -> Void)?
 
     public init(hotWord: String = "hey claW", windowSize: Int = 3) {
         self.hotWord = hotWord.lowercased()
@@ -23,6 +23,7 @@ public final class HotWordDetector {
         let normalized = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
 
+        let onHotWord = self.onHotWordDetected
         queue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
             self.transcriptWindow.append(normalized)
@@ -33,13 +34,13 @@ public final class HotWordDetector {
 
         if matchesHotWord(normalized) {
             state = .listening
-            onHotWordDetected?()
+            onHotWord?()
             return true
         }
 
         if slidingWindowMatch() {
             state = .listening
-            onHotWordDetected?()
+            onHotWord?()
             return true
         }
 

@@ -14,7 +14,7 @@ public final class StateManager {
 
     public init() {}
 
-    public func setOnStateChange(_ handler: @escaping (BridgeState, BridgeState) -> Void) {
+    public func setOnStateChange(_ handler: @escaping @Sendable (BridgeState, BridgeState) -> Void) {
         onStateChange = handler
     }
 
