@@ -29,7 +29,7 @@ public final class CommandBuffer {
             self.lastAudioLevel = 0
         }
         startSilenceCheckTimer()
-        Logger.shared.debug("Capture started")
+        AppLogger.shared.debug("Capture started")
     }
 
     public func stopCapture() {
@@ -39,7 +39,7 @@ public final class CommandBuffer {
             self.isCapturing = false
             self.silenceStartTime = nil
         }
-        Logger.shared.debug("Capture stopped")
+        AppLogger.shared.debug("Capture stopped")
     }
 
     public func append(_ data: Data) {

@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// Semantic version — update via semantic-release on merge to main
+// Semantic version — updated by semantic-release on merge to main
 let currentVersion = "0.1.0"
 
 let package = Package(
@@ -12,7 +12,9 @@ let package = Package(
     products: [
         .executable(name: "NativeAudioBridge", targets: ["NativeAudioBridge"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
+    ],
     targets: [
         .target(
             name: "NativeAudioBridgeLibrary",
@@ -20,7 +22,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "NativeAudioBridge",
-            dependencies: ["NativeAudioBridgeLibrary"],
+            dependencies: [
+                "NativeAudioBridgeLibrary",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
             path: "Sources/NativeAudioBridgeApp",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])

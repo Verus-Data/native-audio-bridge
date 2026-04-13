@@ -53,10 +53,10 @@ public final class CommandProcessor {
     public func preparePayload(transcript: String) -> DispatchPayload? {
         let sanitized = sanitize(transcript)
         guard !sanitized.isEmpty else {
-            Logger.shared.info("Empty transcript after sanitization, skipping dispatch")
+            AppLogger.shared.info("Empty transcript after sanitization, skipping dispatch")
             return nil
         }
-        Logger.shared.debug("Prepared payload: \"\(sanitized)\"")
+        AppLogger.shared.debug("Prepared payload: \"\(sanitized)\"")
         return DispatchPayload(
             message: sanitized,
             name: name,
