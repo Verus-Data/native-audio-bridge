@@ -1,6 +1,12 @@
 import Foundation
 import NativeAudioBridgeLibrary
 
+/// Reference-type wrapper for mutable capture in closures (Swift concurrency safe)
+final class Box<T> {
+    var value: T
+    init(_ value: T) { self.value = value }
+}
+
 private var testsPassed = 0
 private var testsFailed = 0
 
@@ -91,17 +97,17 @@ func testCommandBufferRMSCalculationSignal() {
 
 func testCommandBufferSilenceDetection() {
     let buffer = CommandBuffer(silenceTimeoutMs: 100, silenceThreshold: 0.5)
-    var silenceDetected = false
-    buffer.onSilenceDetected = { silenceDetected = true }
+    let detected = Box(false)
+    buffer.onSilenceDetected = { detected.value = true }
     buffer.startCapture()
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     let silentData = Data(repeating: 0, count: 256 * MemoryLayout<Float>.size)
     buffer.append(silentData)
     let deadline = Date().addingTimeInterval(3.0)
-    while !silenceDetected && Date() < deadline {
+    while !detected.value && Date() < deadline {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     }
-    assert(silenceDetected, "silence should be detected within timeout")
+    assert(detected.value, "silence should be detected within timeout")
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
     assert(!buffer.capturing, "capture should stop after silence detection")
 }
