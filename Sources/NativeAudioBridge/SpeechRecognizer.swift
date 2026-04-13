@@ -8,6 +8,7 @@ public final class SpeechRecognizer {
     private let speechRecognizer: SFSpeechRecognizer?
     private let queue = DispatchQueue(label: "com.nativeaudiobridge.speech", attributes: .concurrent)
     private var isRunning = false
+    private var lastTranscript: String = ""
 
     public var onPartialResult: ((String) -> Void)?
     public var onFinalResult: ((String) -> Void)?
@@ -15,6 +16,10 @@ public final class SpeechRecognizer {
 
     public init(locale: Locale = Locale(identifier: "en-US")) {
         speechRecognizer = SFSpeechRecognizer(locale: locale)
+    }
+
+    public var currentTranscript: String {
+        queue.sync { lastTranscript }
     }
 
     public static func requestAuthorization() async -> Bool {
@@ -53,6 +58,9 @@ public final class SpeechRecognizer {
             self.queue.async {
                 if let result {
                     let transcript = result.bestTranscription.formattedString
+                    self.queue.async(flags: .barrier) { [weak self] in
+                        self?.lastTranscript = transcript
+                    }
                     if result.isFinal {
                         self.onFinalResult?(transcript)
                     } else {

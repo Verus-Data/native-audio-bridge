@@ -10,7 +10,7 @@ public final class HotWordDetector {
     private let windowSize: Int
     private var transcriptWindow: [String] = []
     private let queue = DispatchQueue(label: "com.nativeaudiobridge.hotword", attributes: .concurrent)
-    private(set) var state: HotWordDetectorState = .idle
+    public private(set) var state: HotWordDetectorState = .idle
 
     public var onHotWordDetected: (() -> Void)?
 

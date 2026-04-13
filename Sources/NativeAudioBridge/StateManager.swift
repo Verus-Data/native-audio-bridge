@@ -12,6 +12,8 @@ public final class StateManager {
     private let stateQueue = DispatchQueue(label: "com.nativeaudiobridge.state", attributes: .concurrent)
     private var onStateChange: ((BridgeState, BridgeState) -> Void)?
 
+    public init() {}
+
     public func setOnStateChange(_ handler: @escaping (BridgeState, BridgeState) -> Void) {
         onStateChange = handler
     }
