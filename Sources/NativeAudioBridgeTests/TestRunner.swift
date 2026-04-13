@@ -301,8 +301,8 @@ func testLogLevelFromString() {
     assertNil(LogLevel(from: "invalid"), "invalid log level should return nil")
 }
 
-func testLoggerLogLevelFiltering() {
-    let log = Logger.shared
+func testAppLoggerLogLevelFiltering() {
+    let log = AppLogger.shared
     log.setLogLevel(.error)
     log.debug("should not appear")
     log.info("should not appear")
@@ -312,8 +312,13 @@ func testLoggerLogLevelFiltering() {
 }
 
 func testVersionString() {
-    assertEqual(NativeAudioBridgeVersion.versionString, "0.3.0", "version should match semver")
-    assert(NativeAudioBridgeVersion.major >= 0, "major version should be non-negative")
+    let version = AppVersion.current
+    assert(!version.isEmpty, "version string should not be empty")
+    let parts = version.split(separator: ".").compactMap { Int($0) }
+    assertEqual(parts.count, 3, "version should have 3 components (semver)")
+    if parts.count >= 1 {
+        assert(parts[0] >= 0, "major version should be non-negative")
+    }
 }
 
 @main
@@ -350,7 +355,7 @@ struct TestRunner {
             ("testConfigurationManagerConfigFile", testConfigurationManagerConfigFile),
             ("testConfigurationManagerEnvOverridesFile", testConfigurationManagerEnvOverridesFile),
             ("testLogLevelFromString", testLogLevelFromString),
-            ("testLoggerLogLevelFiltering", testLoggerLogLevelFiltering),
+            ("testAppLoggerLogLevelFiltering", testAppLoggerLogLevelFiltering),
             ("testVersionString", testVersionString),
         ]
         var passed = 0

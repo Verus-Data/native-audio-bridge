@@ -10,7 +10,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NativeAudioBridge", targets: ["NativeAudioBridge"])
+        .executable(name: "NativeAudioBridge", targets: ["NativeAudioBridge"]),
+        .executable(name: "NativeAudioBridgeTestRunner", targets: ["NativeAudioBridgeTestRunner"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
@@ -31,10 +32,13 @@ let package = Package(
                 .unsafeFlags(["-parse-as-library"])
             ]
         ),
-        .testTarget(
-            name: "NativeAudioBridgeTests",
+        .executableTarget(
+            name: "NativeAudioBridgeTestRunner",
             dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Sources/NativeAudioBridgeTests"
+            path: "Sources/NativeAudioBridgeTests",
+            swiftSettings: [
+                .unsafeFlags(["-parse-as-library"])
+            ]
         )
     ],
     swiftLanguageVersions: [.v5]
