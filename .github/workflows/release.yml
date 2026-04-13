@@ -12,6 +12,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-15
+    if: "!contains(github.event.head_commit.message, 'chore(release)')"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,8 +26,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install semantic-release
-        run: npm install -g semantic-release
+      - name: Install semantic-release and plugins
+        run: npm install -g semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/exec @semantic-release/git @semantic-release/github
 
       - name: Build release binary
         run: swift build -c release
@@ -35,22 +36,11 @@ jobs:
         run: |
           mkdir -p dist
           cp .build/release/NativeAudioBridge dist/
-          tar -czf native-audio-bridge-${{ github.sha }}.tar.gz -C dist NativeAudioBridge
+          VERSION=$(semantic-release --dry-run 2>&1 | grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+' || true)
+          TAG=${VERSION:-${{ github.sha }}}
+          tar -czf native-audio-bridge-${TAG}.tar.gz -C dist NativeAudioBridge
 
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx semantic-release
-
-      - name: Bump version in Package.swift and Version.swift
-        if: env.SEMANTIC_RELEASE_NEXT_VERSION != ''
-        run: |
-          VERSION="${SEMANTIC_RELEASE_NEXT_VERSION}"
-          sed -i '' "s/let currentVersion = \".*\"/let currentVersion = \"${VERSION}\"/" Package.swift
-          sed -i '' "s/public static let current = \".*\"/public static let current = \"${VERSION}\"/" Sources/NativeAudioBridge/Version.swift
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Package.swift Sources/NativeAudioBridge/Version.swift
-          git commit -m "chore(release): bump version to ${VERSION} [skip ci]"
-          git push
+        run: semantic-release

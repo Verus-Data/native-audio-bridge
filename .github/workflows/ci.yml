@@ -18,8 +18,25 @@ jobs:
       - name: Build
         run: swift build
 
-      - name: Build test runner
+      - name: Run tests with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Coverage report
+        run: |
+          # Find the .xcresult bundle
+          RESULT_PATH=$(find .build -name "*.xcresult" -type d | head -1)
+          if [ -n "$RESULT_PATH" ]; then
+            xcrun xccov view --report "$RESULT_PATH" > coverage_report.txt 2>/dev/null || true
+            if [ -s coverage_report.txt ]; then
+              echo "## Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              cat coverage_report.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Build standalone test runner
         run: swift build --product NativeAudioBridgeTestRunner
 
-      - name: Run tests
+      - name: Run standalone test runner
         run: .build/debug/NativeAudioBridgeTestRunner
