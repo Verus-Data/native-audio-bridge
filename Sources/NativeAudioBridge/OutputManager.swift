@@ -64,45 +64,46 @@ public final class OutputManager {
     
     /// Output a processed command to configured destinations
     public func output(_ payload: DispatchPayload) async throws {
-        let dispatchGroup = DispatchGroup()
-        var errors: [Error] = []
-        
-        // Webhook output
-        if let dispatcher = webhookDispatcher, (mode == .webhook || mode == .both) {
-            dispatchGroup.enter()
-            Task {
-                do {
-                    try await dispatcher.dispatch(payload: payload)
-                    logger.debug("Webhook dispatch succeeded", category: .webhook)
-                } catch {
-                    errors.append(error)
-                    logger.error("Webhook dispatch failed: \(error)", category: .webhook)
+        typealias OutputResult = Result<Void, Error>
+
+        var results: [OutputResult] = []
+
+        await withTaskGroup(of: OutputResult.self) { group in
+            if let dispatcher = self.webhookDispatcher, (mode == .webhook || mode == .both) {
+                group.addTask {
+                    do {
+                        try await dispatcher.dispatch(payload: payload)
+                        self.logger.debug("Webhook dispatch succeeded", category: .webhook)
+                        return .success(())
+                    } catch {
+                        self.logger.error("Webhook dispatch failed: \(error)", category: .webhook)
+                        return .failure(error)
+                    }
                 }
-                dispatchGroup.leave()
+            }
+
+            if let path = self.jsonlPath, (mode == .jsonlFile || mode == .both) {
+                group.addTask {
+                    do {
+                        try await self.appendToJSONL(payload: payload, at: path)
+                        self.logger.debug("JSONL append succeeded", category: .app)
+                        return .success(())
+                    } catch {
+                        self.logger.error("JSONL append failed: \(error)", category: .app)
+                        return .failure(error)
+                    }
+                }
+            }
+
+            for await result in group {
+                results.append(result)
             }
         }
-        
-        // JSONL file output
-        if let path = jsonlPath, (mode == .jsonlFile || mode == .both) {
-            dispatchGroup.enter()
-            do {
-                try await appendToJSONL(payload: payload, at: path)
-                logger.debug("JSONL append succeeded", category: .app)
-            } catch {
-                errors.append(error)
-                logger.error("JSONL append failed: \(error)", category: .app)
-            }
-            dispatchGroup.leave()
+
+        let errors = results.compactMap { result -> Error? in
+            if case .failure(let error) = result { return error } else { return nil }
         }
-        
-        // Wait with timeout
-        let result = dispatchGroup.wait(timeout: .now() + 10)
-        if result == .timedOut {
-            logger.error("Output operation timed out", category: .app)
-            throw OutputError.timeout
-        }
-        
-        // Report if any errors occurred
+
         if !errors.isEmpty {
             throw OutputError.partialFailure(errors)
         }
