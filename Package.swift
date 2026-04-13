@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Semantic version — updated by semantic-release on merge to main
-let currentVersion = "0.1.0"
+let currentVersion = "1.0.0"
 
 let package = Package(
     name: "NativeAudioBridge",
