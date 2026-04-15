@@ -168,23 +168,43 @@ struct AudioBridgeApp: AsyncParsableCommand {
             }
         }
 
-        log.info("Requesting microphone permission...")
-
-        let micAuthorized = await Self.requestMicrophonePermission()
-        guard micAuthorized else {
-            log.error("Microphone permission denied. Exiting.")
-            throw ExitCode.failure
-        }
-
-        log.info("Microphone authorized. Requesting speech recognition permission...")
-
-        let speechAuthorized = await SpeechRecognizer.requestAuthorization()
-        guard speechAuthorized else {
-            log.error("Speech recognition permission denied. Exiting.")
-            throw ExitCode.failure
-        }
-
         log.info("Speech recognition authorized. Starting audio engine...")
+
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch micStatus {
+        case .authorized:
+            break
+        case .notDetermined:
+            let granted = await Self.requestMicrophonePermission()
+            if !granted {
+                log.error("Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone")
+                throw ExitCode.failure
+            }
+        case .denied, .restricted:
+            log.error("Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone")
+            throw ExitCode.failure
+        @unknown default:
+            log.error("Unknown microphone permission status. Please check System Settings > Privacy & Security > Microphone")
+            throw ExitCode.failure
+        }
+
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        switch speechStatus {
+        case .authorized:
+            break
+        case .notDetermined:
+            let granted = await SpeechRecognizer.requestAuthorization()
+            if !granted {
+                log.error("Speech recognition permission denied. Please enable in System Settings > Privacy & Security > Speech Recognition")
+                throw ExitCode.failure
+            }
+        case .denied, .restricted:
+            log.error("Speech recognition permission denied. Please enable in System Settings > Privacy & Security > Speech Recognition")
+            throw ExitCode.failure
+        @unknown default:
+            log.error("Unknown speech recognition permission status. Please check System Settings > Privacy & Security > Speech Recognition")
+            throw ExitCode.failure
+        }
 
         do {
             try audioEngine.start()

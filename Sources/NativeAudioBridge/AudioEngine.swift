@@ -1,6 +1,11 @@
 import AVFoundation
 import Foundation
 
+public enum AudioError: Error {
+    case microphoneNotAvailable
+    case microphonePermissionDenied
+}
+
 public final class AudioEngine {
     private let engine = AVAudioEngine()
 
