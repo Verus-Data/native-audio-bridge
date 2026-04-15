@@ -20,6 +20,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
               native-audio-bridge --generate-config        Generate default config file
               native-audio-bridge --generate-config /path/to/config.yaml  Generate to custom path
               native-audio-bridge --dry-run                Validate config without starting
+              native-audio-bridge --check-audio            Verify audio input is available
               native-audio-bridge --config /path/to/config.yaml  Use custom config
             """,
         version: AppVersion.current
@@ -31,6 +32,9 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
     @Flag(name: .long, help: "Validate config and print status without starting audio capture")
     var dryRun: Bool = false
+
+    @Flag(name: .long, help: "Check if audio input is available and exit")
+    var checkAudio: Bool = false
 
     @Option(name: .long, help: "Generate a default config file at the specified path")
     var generateConfig: String?
@@ -62,10 +66,36 @@ struct AudioBridgeApp: AsyncParsableCommand {
             return
         }
 
+        #if os(macOS)
+        if checkAudio {
+            print("Checking audio input availability...")
+            do {
+                try AudioEngine.checkAudioAvailable()
+                print("Audio input is available. Ready to capture audio.")
+                throw ExitCode.success
+            } catch let error as AudioError {
+                print("Audio input is NOT available.")
+                print("Error: \(error.localizedDescription)")
+                print("")
+                print("Troubleshooting steps:")
+                print("  1. Connect a microphone or use built-in input")
+                print("  2. Check System Settings > Sound > Input")
+                print("  3. Ensure no other app is using the microphone")
+                print("  4. Try: sudo killall coreaudiod (restarts audio subsystem)")
+                throw ExitCode.failure
+            } catch {
+                print("Audio check failed: \(error.localizedDescription)")
+                throw ExitCode.failure
+            }
+        }
+        #endif
+
         log.info("Native Audio Bridge starting...")
         log.debug("Configuration loaded - hotWord: \(config.hotWord), silenceTimeout: \(config.silenceTimeoutMs)ms, webhookURL: \(config.webhookURL)")
 
         printStartupBanner(config: config)
+        
+        print("🔍 Checking permissions and audio devices...")
 
         let audioEngine = AudioEngine()
         let stateManager = StateManager()
@@ -242,10 +272,16 @@ struct AudioBridgeApp: AsyncParsableCommand {
         }
 
         do {
+            #if os(macOS)
+            try AudioEngine.checkAudioAvailable()
+            #endif
             let nativeEngine = AVAudioEngine()
             try nativeEngine.start()
             try speechRecognizer.startStreaming(audioEngine: nativeEngine)
             log.info("Speech recognizer streaming started.")
+        } catch let error as AudioError {
+            log.error("Audio subsystem unavailable for speech recognition: \(error.localizedDescription)")
+            log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
         } catch {
             log.error("Failed to start speech recognizer: \(error.localizedDescription)")
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")

@@ -1,27 +1,87 @@
 import AVFoundation
 import Foundation
 
+#if os(macOS)
+import CoreAudio
+#endif
+
 public enum AudioError: Error, LocalizedError {
     case microphoneNotAvailable
     case microphonePermissionDenied
     case engineStartFailed(String)
+    case audioSubsystemUnavailable(String)
 
     public var errorDescription: String? {
         switch self {
         case .microphoneNotAvailable:
-            return "No microphone available. Please connect a microphone and try again."
+            return "No microphone available. Connect a microphone or check System Settings > Sound > Input"
         case .microphonePermissionDenied:
             return "Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone."
         case .engineStartFailed(let message):
             return "Failed to start audio engine: \(message)"
+        case .audioSubsystemUnavailable(let message):
+            return "Audio subsystem unavailable: \(message)"
         }
     }
 }
 
-public final class AudioEngine {
-    private let engine = AVAudioEngine()
+#if os(macOS)
+private enum AudioAvailabilityResult: Int32 {
+    case available = 0
+    case noInputDevice = 1
+    case exception = 2
+    case engineStartFailed = 3
+}
 
-    public init() {}
+@_silgen_name("AudioAvailabilityChecker_checkAudioInputAvailability")
+private func AudioAvailabilityChecker_checkAudioInputAvailability() -> Int32
+
+@_silgen_name("AudioAvailabilityChecker_lastErrorMessage")
+private func AudioAvailabilityChecker_lastErrorMessage() -> UnsafePointer<CChar>?
+
+private func getLastErrorMessage() -> String? {
+    if let cString = AudioAvailabilityChecker_lastErrorMessage() {
+        return String(cString: cString)
+    }
+    return nil
+}
+#endif
+
+public final class AudioEngine {
+    #if os(macOS)
+    private var engine: AVAudioEngine?
+    private var isAudioSafe: Bool = false
+    #else
+    private let engine = AVAudioEngine()
+    #endif
+
+    public init() {
+        #if os(macOS)
+        checkAudioSafety()
+        if isAudioSafe {
+            engine = AVAudioEngine()
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    private func checkAudioSafety() {
+        let result = AudioAvailabilityResult(rawValue: AudioAvailabilityChecker_checkAudioInputAvailability())
+        switch result {
+        case .available:
+            isAudioSafe = true
+        case .noInputDevice:
+            isAudioSafe = false
+        case .exception, .engineStartFailed:
+            isAudioSafe = false
+        case .none:
+            isAudioSafe = false
+        @unknown default:
+            isAudioSafe = false
+        }
+    }
+    #endif
+
     private let sampleRate: Double = 16000
     private let bufferSize: AVAudioFrameCount = 1024
     private var audioBuffers: [Data] = []
@@ -29,6 +89,8 @@ public final class AudioEngine {
     private var isCapturing = false
     private let maxBufferMemoryMB: Int = 80
     private var onAudioBuffer: (@Sendable (Data) -> Void)?
+    private var converter: AVAudioConverter?
+    private var inputFormat: AVAudioFormat?
 
     public var sampleRateValue: Double { sampleRate }
 
@@ -36,14 +98,67 @@ public final class AudioEngine {
         onAudioBuffer = handler
     }
 
+    #if os(macOS)
+    public static func checkAudioAvailable() throws {
+        let result = AudioAvailabilityResult(rawValue: AudioAvailabilityChecker_checkAudioInputAvailability())
+        switch result {
+        case .available:
+            return
+        case .noInputDevice:
+            throw AudioError.microphoneNotAvailable
+        case .exception, .engineStartFailed:
+            let message = getLastErrorMessage() ?? "Unknown audio subsystem error"
+            throw AudioError.audioSubsystemUnavailable(message)
+        case .none:
+            throw AudioError.audioSubsystemUnavailable("Unknown audio subsystem error")
+        @unknown default:
+            throw AudioError.audioSubsystemUnavailable("Unknown audio subsystem error")
+        }
+    }
+    #endif
+
     public func start() throws {
+        #if os(macOS)
+        guard isAudioSafe, let engine = engine else {
+            throw AudioError.microphoneNotAvailable
+        }
+        #endif
+        
+        #if os(macOS)
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var inputDevice = AudioDeviceID()
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let result = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &propertySize,
+            &inputDevice
+        )
+        guard result == noErr && inputDevice != kAudioObjectUnknown && inputDevice != 0 else {
+            throw AudioError.microphoneNotAvailable
+        }
+        #else
         let audioDevices = AVCaptureDevice.devices(for: .audio)
         guard !audioDevices.isEmpty else {
             throw AudioError.microphoneNotAvailable
         }
-
+        #endif
+        
+        #if os(macOS)
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        inputFormat = format
+        #else
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputFormat = format
+        #endif
 
         let desiredFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -52,25 +167,40 @@ public final class AudioEngine {
             interleaved: false
         )!
 
-        let converter = AVAudioConverter(from: format, to: desiredFormat)!
+        guard let conv = AVAudioConverter(from: format, to: desiredFormat) else {
+            throw AudioError.engineStartFailed("Failed to create audio converter")
+        }
+        converter = conv
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
-            guard let self else { return }
-            self.processAudioBuffer(buffer, converter: converter, fromFormat: format, toFormat: desiredFormat)
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
+            guard let self, let conv = self.converter, let fromFormat = self.inputFormat else { return }
+            self.processAudioBuffer(buffer, converter: conv, fromFormat: fromFormat, toFormat: desiredFormat)
         }
 
+        #if os(macOS)
         do {
             try engine.start()
         } catch {
             throw AudioError.engineStartFailed(error.localizedDescription)
         }
+        #else
+        try engine.start()
+        #endif
         isCapturing = true
     }
 
     public func stop() {
+        #if os(macOS)
+        guard let engine = engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        #else
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        #endif
         isCapturing = false
+        converter = nil
+        inputFormat = nil
         clearBuffers()
     }
 
@@ -89,7 +219,11 @@ public final class AudioEngine {
         return totalBytes / (1024 * 1024)
     }
 
+    #if os(macOS)
+    public var isRunning: Bool { engine?.isRunning ?? false }
+    #else
     public var isRunning: Bool { engine.isRunning }
+    #endif
 
     private func processAudioBuffer(
         _ buffer: AVAudioPCMBuffer,

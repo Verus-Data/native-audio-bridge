@@ -19,7 +19,9 @@ let package = Package(
     targets: [
         .target(
             name: "NativeAudioBridgeLibrary",
-            path: "Sources/NativeAudioBridge"
+            path: "Sources/NativeAudioBridge",
+            sources: ["AudioAvailabilityChecker.m"],
+            publicHeadersPath: "include"
         ),
         .executableTarget(
             name: "NativeAudioBridge",
