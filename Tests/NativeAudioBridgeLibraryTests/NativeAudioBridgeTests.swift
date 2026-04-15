@@ -273,6 +273,55 @@ final class ConfigurationManagerTests: XCTestCase {
         XCTAssertEqual(config.hotWord, "from env")
         XCTAssertEqual(config.webhookToken, "env-token")
     }
+
+    func testFileOutputModeWithNestedYamlKeys() {
+        let tempDir = NSTemporaryDirectory()
+        let configPath = tempDir + "test_config_file_output_\(Int(Date().timeIntervalSince1970)).yaml"
+        // Using nested YAML structure for file output (this is what users expect to work)
+        let yaml = """
+        hot_word: "hey test"
+        output_mode: "file"
+        file:
+          path: "-"
+          rotate_daily: false
+        webhook_token: "test-token"
+        """
+        try! yaml.write(toFile: configPath, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: configPath) }
+
+        let env: [String: String] = [:]
+        let manager = ConfigurationManager(environment: env)
+        let config = try! manager.load(from: configPath)
+        
+        // This test DEMONSTRATES THE BUG: nested YAML keys don't parse correctly
+        // Expected: outputMode should be .file, fileOutput.path should be "-"
+        // Actual: outputMode defaults to .webhook because nested keys aren't parsed
+        XCTAssertEqual(config.outputMode, OutputMode.file, "file output mode should be parsed from nested YAML")
+        XCTAssertEqual(config.fileOutput.path, "-", "file.path should be parsed from nested YAML")
+    }
+
+    func testFileOutputModeWithFlatKeys() {
+        let tempDir = NSTemporaryDirectory()
+        let configPath = tempDir + "test_config_file_output_flat_\(Int(Date().timeIntervalSince1970)).yaml"
+        // Using flat dot-notation keys (workaround for the YAML parser limitation)
+        let yaml = """
+        hot_word: "hey test"
+        output_mode: "file"
+        file.path: "-"
+        file.rotate_daily: false
+        webhook_token: "test-token"
+        """
+        try! yaml.write(toFile: configPath, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: configPath) }
+
+        let env: [String: String] = [:]
+        let manager = ConfigurationManager(environment: env)
+        let config = try! manager.load(from: configPath)
+        
+        // Flat keys should work correctly
+        XCTAssertEqual(config.outputMode, OutputMode.file)
+        XCTAssertEqual(config.fileOutput.path, "-")
+    }
 }
 
 final class LogLevelTests: XCTestCase {
