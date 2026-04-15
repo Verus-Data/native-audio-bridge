@@ -188,6 +188,21 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        let audioDevices = AVCaptureDevice.devices(for: .audio)
+        log.info("Found \(audioDevices.count) audio input device(s)")
+        for device in audioDevices {
+            log.debug("  - \(device.localizedName)")
+        }
+
+        guard !audioDevices.isEmpty else {
+            log.error("No audio input devices found. Please connect a microphone.")
+            log.error("Possible causes:")
+            log.error("  - No microphone connected")
+            log.error("  - External microphone disconnected")
+            log.error("  - macOS audio subsystem issue (try: sudo killall coreaudiod)")
+            throw ExitCode.failure
+        }
+
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
         switch speechStatus {
         case .authorized:
@@ -210,8 +225,19 @@ struct AudioBridgeApp: AsyncParsableCommand {
             try audioEngine.start()
             log.info("Audio engine running. Sample rate: \(audioEngine.sampleRateValue) Hz")
             stateManager.transition(to: .idle)
+        } catch let error as AudioError {
+            log.error("Failed to start audio engine: \(error.localizedDescription)")
+            log.error("Possible causes:")
+            log.error("  - No microphone connected")
+            log.error("  - Microphone in use by another app")
+            log.error("  - macOS audio subsystem issue (try: sudo killall coreaudiod)")
+            throw ExitCode.failure
         } catch {
             log.error("Failed to start audio engine: \(error.localizedDescription)")
+            log.error("Possible causes:")
+            log.error("  - No microphone connected")
+            log.error("  - Microphone in use by another app")
+            log.error("  - macOS audio subsystem issue (try: sudo killall coreaudiod)")
             throw ExitCode.failure
         }
 

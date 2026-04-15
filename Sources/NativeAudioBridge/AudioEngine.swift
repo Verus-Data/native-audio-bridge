@@ -1,9 +1,21 @@
 import AVFoundation
 import Foundation
 
-public enum AudioError: Error {
+public enum AudioError: Error, LocalizedError {
     case microphoneNotAvailable
     case microphonePermissionDenied
+    case engineStartFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .microphoneNotAvailable:
+            return "No microphone available. Please connect a microphone and try again."
+        case .microphonePermissionDenied:
+            return "Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone."
+        case .engineStartFailed(let message):
+            return "Failed to start audio engine: \(message)"
+        }
+    }
 }
 
 public final class AudioEngine {
@@ -25,6 +37,11 @@ public final class AudioEngine {
     }
 
     public func start() throws {
+        let audioDevices = AVCaptureDevice.devices(for: .audio)
+        guard !audioDevices.isEmpty else {
+            throw AudioError.microphoneNotAvailable
+        }
+
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
@@ -42,7 +59,11 @@ public final class AudioEngine {
             self.processAudioBuffer(buffer, converter: converter, fromFormat: format, toFormat: desiredFormat)
         }
 
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            throw AudioError.engineStartFailed(error.localizedDescription)
+        }
         isCapturing = true
     }
 
