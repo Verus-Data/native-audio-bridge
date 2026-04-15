@@ -264,26 +264,157 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
     private func generateConfigFile(at path: String) throws {
         let defaultContent = """
+            # ═══════════════════════════════════════════════════════════════════════════
             # Native Audio Bridge Configuration
-            # Generated on \(ISO8601DateFormatter().string(from: Date()))
+            # Generated: \(ISO8601DateFormatter().string(from: Date()))
+            # ═══════════════════════════════════════════════════════════════════════════
+            #
+            # QUICK START
+            # ──────────
+            # 1. Set your webhook_url and webhook_token for production use
+            # 2. Customize the hot_word to your preferred trigger phrase
+            # 3. Run: native-audio-bridge --dry-run to validate
+            # 4. Run: native-audio-bridge to start listening
+            #
+            # OUTPUT MODES
+            # ────────────
+            # This app supports two output modes:
+            #
+            #   webhook  → POST commands to a URL (production use)
+            #   file     → Write JSONL to a file (testing/debugging)
+            #
+            # Uncomment the mode you want to use. Default is webhook.
 
-            # Hot word to listen for
+            # ─────────────────────────────────────────────────────────────────────────
+            # HOT WORD DETECTION
+            # ─────────────────────────────────────────────────────────────────────────
+
+            # The trigger phrase the app listens for.
+            # When detected, the app begins capturing audio until silence is detected.
+            # Example: "hey claW", "hey assistant", "computer"
             hot_word: "hey claW"
 
-            # Silence timeout in milliseconds (time to wait after speech ends)
+            # Whether hot word matching is case-sensitive.
+            # Set to false to match "HEY CLAW", "Hey Claw", etc.
+            # Options: true, false
+            case_sensitive: false
+
+            # ─────────────────────────────────────────────────────────────────────────
+            # SILENCE DETECTION
+            # ─────────────────────────────────────────────────────────────────────────
+
+            # Milliseconds to wait after speech ends before processing.
+            # Higher values give more time for natural pauses in speech.
+            # Lower values respond faster but may truncate commands.
+            # Typical range: 500-3000ms
             silence_timeout: 1500
 
             # Audio level threshold for silence detection (0.0 - 1.0)
+            # Lower values = more sensitive to quiet sounds
+            # Higher values = only loud sounds trigger detection
+            # 0.01 is a good default for typical environments
+            # 0.001 for quiet rooms, 0.05 for noisy environments
             silence_threshold: 0.01
 
-            # Webhook URL for dispatching commands
+            # ─────────────────────────────────────────────────────────────────────────
+            # OUTPUT MODE
+            # ─────────────────────────────────────────────────────────────────────────
+            # Choose how to output detected commands:
+            #   "webhook" → POST to a URL (recommended for production)
+            #   "file"    → Write JSONL lines to a file
+            output_mode: "webhook"
+
+            # ─────────────────────────────────────────────────────────────────────────
+            # WEBHOOK OUTPUT (when output_mode: "webhook")
+            # ─────────────────────────────────────────────────────────────────────────
+            #
+            # Use webhook mode for production deployments where you need
+            # real-time command delivery to your backend or agent system.
+
+            # Required: URL to POST commands to
             webhook_url: "https://gateway.openclaw.io/hooks/agent"
 
-            # Bearer token for webhook authentication
+            # Required: Bearer token for authentication
+            # Set via environment: NATIVE_AUDIO_BRIDGE_TOKEN
             webhook_token: "your-token-here"
 
-            # Log level: debug, info, or error
+            # Optional: HTTP method for webhook requests
+            # Options: "POST" (default), "PUT"
+            # webhook.method: "POST"
+
+            # Optional: Retry failed requests automatically
+            # Set to "false" to disable retries
+            webhook.retry: true
+
+            # ─────────────────────────────────────────────────────────────────────────
+            # FILE OUTPUT (when output_mode: "file")
+            # ─────────────────────────────────────────────────────────────────────────
+            #
+            # Use file mode for testing, debugging, or local development.
+            # Each command is written as a JSON line (JSONL) to the specified file.
+            #
+            # Example JSONL output:
+            #   {"transcript": "turn on the lights", "timestamp": "2024-01-15T10:30:00Z"}
+            #   {"transcript": "play some music", "timestamp": "2024-01-15T10:31:15Z"}
+
+            # Path for output file. Use "-" for stdout (console output).
+            # Example paths:
+            #   "-"          → Print to console/stdout
+            #   "commands.jsonl"     → Write to current directory
+            #   "/tmp/voice-commands.jsonl" → Write to temp directory
+            #   "~/voice-commands.jsonl"     → Write to home directory
+            # file.path: "-"
+
+            # Whether to rotate files daily (adds date suffix).
+            # When enabled, files are named: commands-2024-01-15.jsonl
+            # file.rotate_daily: false
+
+            # ─────────────────────────────────────────────────────────────────────────
+            # LOGGING
+            # ─────────────────────────────────────────────────────────────────────────
+            # Controls verbosity of console output.
+            # Options:
+            #   "debug" → Detailed logs for troubleshooting
+            #   "info"  → Normal operational logs (recommended)
+            #   "error" → Only errors and critical messages
             log_level: "info"
+
+            # ═══════════════════════════════════════════════════════════════════════════
+            # EXAMPLE CONFIGURATIONS
+            # ═══════════════════════════════════════════════════════════════════════════
+            #
+            # PRODUCTION CONFIG (webhook mode):
+            # ───────────────────────────────────────────────────────────────────────
+            # hot_word: "hey claW"
+            # case_sensitive: false
+            # silence_timeout: 1500
+            # silence_threshold: 0.01
+            # output_mode: "webhook"
+            # webhook_url: "https://your-server.com/api/commands"
+            # webhook_token: "your-secure-token-here"
+            # webhook.retry: true
+            # log_level: "info"
+            #
+            # TESTING CONFIG (console output):
+            # ───────────────────────────────────────────────────────────────────────
+            # hot_word: "hey claW"
+            # case_sensitive: false
+            # silence_timeout: 2000
+            # silence_threshold: 0.01
+            # output_mode: "file"
+            # file.path: "-"
+            # log_level: "debug"
+            #
+            # DEBUGGING CONFIG (file output):
+            # ───────────────────────────────────────────────────────────────────────
+            # hot_word: "hey claW"
+            # case_sensitive: false
+            # silence_timeout: 1500
+            # silence_threshold: 0.01
+            # output_mode: "file"
+            # file.path: "/tmp/voice-commands.jsonl"
+            # file.rotate_daily: true
+            # log_level: "debug"
             """
 
         let configURL: URL
