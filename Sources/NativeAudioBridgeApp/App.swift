@@ -491,15 +491,17 @@ struct AudioBridgeApp: AsyncParsableCommand {
         print("   Speech Recognition: \(speechStatus.icon) \(speechStatus.status)")
         print("")
 
-        print("🌐 Webhook:")
-        print("   URL: \(config.webhookURL)")
-        print("   Token: \(config.webhookToken.isEmpty ? "❌ Not set" : "✅ Configured")")
+        if config.outputMode == .webhook {
+            print("🌐 Webhook:")
+            print("   URL: \(config.webhookURL)")
+            print("   Token: \(config.webhookToken.isEmpty ? "❌ Not set" : "✅ Configured")")
+        } else {
+            print("📄 File output:")
+            print("   Path: \(config.fileOutput.path)")
+        }
         print("")
 
-        print("📤 Output mode: webhook")
-        print("")
-
-        let allPassed = micStatus.granted && speechStatus.granted && !config.webhookToken.isEmpty
+        let allPassed = micStatus.granted && speechStatus.granted && (config.outputMode == .file || !config.webhookToken.isEmpty)
         print("───────────────────────────────────────────────────────────────")
         print("Status: \(allPassed ? "✅ Ready to start" : "⚠️  Some issues need attention")")
         print("")
@@ -515,7 +517,14 @@ struct AudioBridgeApp: AsyncParsableCommand {
         print("")
         print("   Listening... (Press Ctrl+C to stop)")
         print("")
-        print("   Status: [🎤 Microphone] [🔊 Speech recognition] [🌐 Webhook]")
+        let statusIcon: String
+        switch config.outputMode {
+        case .webhook:
+            statusIcon = "[🌐 Webhook]"
+        case .file:
+            statusIcon = "[📄 File]"
+        }
+        print("   Status: [🎤 Microphone] [🔊 Speech recognition] \(statusIcon)")
         print("")
     }
 
