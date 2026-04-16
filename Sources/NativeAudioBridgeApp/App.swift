@@ -285,9 +285,10 @@ struct AudioBridgeApp: AsyncParsableCommand {
             #if os(macOS)
             try AudioEngine.checkAudioAvailable()
             #endif
-            let nativeEngine = AVAudioEngine()
-            try nativeEngine.start()
-            try speechRecognizer.startStreaming(audioEngine: nativeEngine)
+            guard let sharedEngine = audioEngine.engine else {
+                throw AudioError.microphoneNotAvailable
+            }
+            try speechRecognizer.startStreaming(audioEngine: sharedEngine)
             log.info("Speech recognizer streaming started.")
         } catch let error as AudioError {
             log.error("Audio subsystem unavailable for speech recognition: \(error.localizedDescription)")

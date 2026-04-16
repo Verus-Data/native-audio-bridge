@@ -86,10 +86,10 @@ private func checkAudioInputAvailability() -> AudioCheckResult {
 
 public final class AudioEngine {
     #if os(macOS)
-    private var engine: AVAudioEngine?
+    public var engine: AVAudioEngine?
     private var isAudioSafe: Bool = false
     #else
-    private let engine = AVAudioEngine()
+    public let engine = AVAudioEngine()
     #endif
 
     public init() {
