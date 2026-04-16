@@ -137,6 +137,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        print("[DEBUG] Setting up state change handler...")
         stateManager.setOnStateChange { oldState, newState in
             log.info("[\(oldState) → \(newState)]")
         }
@@ -147,6 +148,14 @@ struct AudioBridgeApp: AsyncParsableCommand {
             commandBuffer.startCapture()
         }
 
+        print("[DEBUG] Setting up hot word detector callback...")
+        hotWordDetector.onHotWordDetected = {
+            log.info("Hot word detected. Transitioning to listening...")
+            stateManager.transition(to: .listening)
+            commandBuffer.startCapture()
+        }
+
+        print("[DEBUG] Setting up command buffer callback...")
         commandBuffer.onSilenceDetected = {
             log.info("Silence detected. Processing command...")
             stateManager.transition(to: .processing)
@@ -213,19 +222,21 @@ struct AudioBridgeApp: AsyncParsableCommand {
             log.error("Speech recognition error: \(error.localizedDescription)")
         }
 
+        print("[DEBUG] Setting up speech recognizer callback...")
         audioEngine.setOnAudioBuffer { data in
             if commandBuffer.capturing {
                 commandBuffer.append(data)
             }
         }
 
-        log.info("Speech recognition authorized. Starting audio engine...")
-
+        print("[DEBUG] Checking microphone permission status...")
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        print("[DEBUG] Microphone status: \(micStatus)")
         switch micStatus {
         case .authorized:
             break
         case .notDetermined:
+            print("[DEBUG] Requesting microphone permission if needed...")
             let granted = await Self.requestMicrophonePermission()
             if !granted {
                 log.error("Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone")
@@ -239,6 +250,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        print("[DEBUG] Microphone permission granted/available")
         let audioDevices = AVCaptureDevice.devices(for: .audio)
         log.info("Found \(audioDevices.count) audio input device(s)")
         for device in audioDevices {
@@ -254,11 +266,13 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        print("[DEBUG] Checking speech recognition permission status...")
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
         switch speechStatus {
         case .authorized:
             break
         case .notDetermined:
+            print("[DEBUG] Requesting speech recognition permission if needed...")
             let granted = await SpeechRecognizer.requestAuthorization()
             if !granted {
                 log.error("Speech recognition permission denied. Please enable in System Settings > Privacy & Security > Speech Recognition")
@@ -272,6 +286,8 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        print("[DEBUG] Speech recognition permission granted/available")
+        print("[DEBUG] Starting audio engine...")
         do {
             try audioEngine.start()
             log.info("Audio engine running. Sample rate: \(audioEngine.sampleRateValue) Hz")
@@ -292,6 +308,8 @@ struct AudioBridgeApp: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        print("[DEBUG] Engine started successfully")
+        print("[DEBUG] Starting speech recognition...")
         do {
             #if os(macOS)
             try AudioEngine.checkAudioAvailable()
@@ -300,7 +318,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
                 throw AudioError.microphoneNotAvailable
             }
             try speechRecognizer.startStreaming(audioEngine: sharedEngine)
-            log.info("Speech recognizer streaming started.")
+            print("[DEBUG] Speech recognition started")
         } catch let error as AudioError {
             log.error("Audio subsystem unavailable for speech recognition: \(error.localizedDescription)")
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
@@ -309,6 +327,8 @@ struct AudioBridgeApp: AsyncParsableCommand {
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
         }
 
+        print("[DEBUG] Starting hot word detection...")
+        print("[DEBUG] Entering main run loop...")
         signal(SIGINT, SIG_IGN)
         let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         signalSource.setEventHandler {
