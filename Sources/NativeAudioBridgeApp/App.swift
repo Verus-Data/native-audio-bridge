@@ -11,7 +11,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
         abstract: "Native macOS voice interaction layer for OpenClaw",
         discussion: """
             Native Audio Bridge listens for a hot word and streams audio to a webhook \
-            when speech is detected. Configure via YAML file or environment variables.
+            when speech is detected. A microphone is required.
 
             Default config path: ~/.config/native-audio-bridge/config.yaml
 
@@ -21,6 +21,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
               native-audio-bridge --generate-config /path/to/config.yaml  Generate to custom path
               native-audio-bridge --dry-run                Validate config without starting
               native-audio-bridge --check-audio            Verify audio input is available
+              native-audio-bridge --check-permissions     Check microphone and speech permissions
               native-audio-bridge --config /path/to/config.yaml  Use custom config
             """,
         version: AppVersion.current
@@ -35,6 +36,10 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
     @Flag(name: .long, help: "Check if audio input is available and exit")
     var checkAudio: Bool = false
+
+    @Flag(name: [.customLong("check-permissions"), .customShort("p")],
+            help: "Check microphone and speech recognition permissions and diagnostics")
+    var checkPermissions: Bool = false
 
     @Option(name: .long, help: "Generate a default config file at the specified path")
     var generateConfig: String?
@@ -89,6 +94,11 @@ struct AudioBridgeApp: AsyncParsableCommand {
             }
         }
         #endif
+
+        if checkPermissions {
+            await performPermissionsCheck()
+            return
+        }
 
         log.info("Native Audio Bridge starting...")
         log.debug("Configuration loaded - hotWord: \(config.hotWord), silenceTimeout: \(config.silenceTimeoutMs)ms, webhookURL: \(config.webhookURL)")
@@ -566,6 +576,63 @@ struct AudioBridgeApp: AsyncParsableCommand {
         let allPassed = micStatus.granted && speechStatus.granted && (config.outputMode == .file || !config.webhookToken.isEmpty)
         print("───────────────────────────────────────────────────────────────")
         print("Status: \(allPassed ? "✅ Ready to start" : "⚠️  Some issues need attention")")
+        print("")
+    }
+
+    private func performPermissionsCheck() async {
+        print("")
+        print("╔══════════════════════════════════════════════════════════════╗")
+        print("║          Native Audio Bridge - Permission Check                  ║")
+        print("╚══════════════════════════════════════════════════════════════╝")
+        print("")
+
+        let micStatus = await Self.checkMicrophonePermission()
+        print("🎤 Microphone:")
+        print("   Status: \(micStatus.icon) \(micStatus.status)")
+        if !micStatus.granted {
+            print("   Fix: Enable in System Settings > Privacy & Security > Microphone")
+        }
+        print("")
+
+        let speechStatus = Self.checkSpeechRecognitionPermission()
+        print("🔊 Speech Recognition:")
+        print("   Status: \(speechStatus.icon) \(speechStatus.status)")
+        if !speechStatus.granted {
+            print("   Fix: Enable in System Settings > Privacy & Security > Speech Recognition")
+        }
+        print("")
+
+        #if os(macOS)
+        let audioDevices = AVCaptureDevice.devices(for: .audio)
+        let deviceCount = audioDevices.count
+        print("🎛️  Audio Input Devices:")
+        print("   Count: \(deviceCount)")
+        if deviceCount == 0 {
+            print("   Fix: Connect a microphone or check System Settings > Sound > Input")
+        } else {
+            for device in AVCaptureDevice.devices(for: .audio) {
+                print("   - \(device.localizedName)")
+            }
+        }
+        print("")
+        #endif
+
+        let allGranted = micStatus.granted && speechStatus.granted
+        print("───────────────────────────────────────────────────────────────")
+        if allGranted {
+            print("Status: ✅ All permissions granted")
+        } else {
+            print("Status: ⚠️  Permissions missing")
+            print("")
+            print("To fix:")
+            print("  • Open: System Settings > Privacy & Security")
+            print("  • Enable Microphone and Speech Recognition")
+            #if os(macOS)
+            if deviceCount == 0 {
+                print("  • Connect a microphone")
+            }
+            #endif
+        }
         print("")
     }
 

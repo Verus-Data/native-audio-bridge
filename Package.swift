@@ -17,11 +17,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
     ],
     targets: [
+        // Swift library
         .target(
             name: "NativeAudioBridgeLibrary",
-            path: "Sources/NativeAudioBridge",
-            sources: ["AudioAvailabilityChecker.m"],
-            publicHeadersPath: "include"
+            path: "Sources/NativeAudioBridge"
         ),
         .executableTarget(
             name: "NativeAudioBridge",

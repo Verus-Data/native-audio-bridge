@@ -26,24 +26,61 @@ public enum AudioError: Error, LocalizedError {
 }
 
 #if os(macOS)
-private enum AudioAvailabilityResult: Int32 {
-    case available = 0
-    case noInputDevice = 1
-    case exception = 2
-    case engineStartFailed = 3
+private enum AudioCheckResult {
+    case available
+    case noInputDevice
+    case audioSubsystemError(String)
 }
 
-@_silgen_name("AudioAvailabilityChecker_checkAudioInputAvailability")
-private func AudioAvailabilityChecker_checkAudioInputAvailability() -> Int32
+private func checkAudioInputAvailability() -> AudioCheckResult {
+    var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var inputDevice = AudioDeviceID()
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
 
-@_silgen_name("AudioAvailabilityChecker_lastErrorMessage")
-private func AudioAvailabilityChecker_lastErrorMessage() -> UnsafePointer<CChar>?
+    let status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address,
+        0,
+        nil,
+        &propertySize,
+        &inputDevice
+    )
 
-private func getLastErrorMessage() -> String? {
-    if let cString = AudioAvailabilityChecker_lastErrorMessage() {
-        return String(cString: cString)
+    if status != noErr {
+        return .audioSubsystemError("Failed to get default input device, error: \(status)")
     }
-    return nil
+
+    if inputDevice == kAudioObjectUnknown || inputDevice == 0 {
+        return .noInputDevice
+    }
+
+    address = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreamFormat,
+        mScope: kAudioDevicePropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    var format = AudioStreamBasicDescription()
+    propertySize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+
+    let formatStatus = AudioObjectGetPropertyData(
+        inputDevice,
+        &address,
+        0,
+        nil,
+        &propertySize,
+        &format
+    )
+
+    if formatStatus != noErr {
+        return .noInputDevice
+    }
+
+    return .available
 }
 #endif
 
@@ -66,17 +103,11 @@ public final class AudioEngine {
 
     #if os(macOS)
     private func checkAudioSafety() {
-        let result = AudioAvailabilityResult(rawValue: AudioAvailabilityChecker_checkAudioInputAvailability())
+        let result = checkAudioInputAvailability()
         switch result {
         case .available:
             isAudioSafe = true
-        case .noInputDevice:
-            isAudioSafe = false
-        case .exception, .engineStartFailed:
-            isAudioSafe = false
-        case .none:
-            isAudioSafe = false
-        @unknown default:
+        case .noInputDevice, .audioSubsystemError:
             isAudioSafe = false
         }
     }
@@ -100,19 +131,14 @@ public final class AudioEngine {
 
     #if os(macOS)
     public static func checkAudioAvailable() throws {
-        let result = AudioAvailabilityResult(rawValue: AudioAvailabilityChecker_checkAudioInputAvailability())
+        let result = checkAudioInputAvailability()
         switch result {
         case .available:
             return
         case .noInputDevice:
             throw AudioError.microphoneNotAvailable
-        case .exception, .engineStartFailed:
-            let message = getLastErrorMessage() ?? "Unknown audio subsystem error"
+        case .audioSubsystemError(let message):
             throw AudioError.audioSubsystemUnavailable(message)
-        case .none:
-            throw AudioError.audioSubsystemUnavailable("Unknown audio subsystem error")
-        @unknown default:
-            throw AudioError.audioSubsystemUnavailable("Unknown audio subsystem error")
         }
     }
     #endif
