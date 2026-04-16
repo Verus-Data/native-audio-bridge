@@ -114,6 +114,7 @@ private func getDefaultInputDeviceID() -> AudioDeviceID? {
         mElement: kAudioObjectPropertyElementMain
     )
 
+    print("[AudioEngine] getDefaultInputDeviceID: calling AudioObjectGetPropertyData...")
     let status = AudioObjectGetPropertyData(
         AudioObjectID(kAudioObjectSystemObject),
         &address,
@@ -122,6 +123,7 @@ private func getDefaultInputDeviceID() -> AudioDeviceID? {
         &propertySize,
         &inputDevice
     )
+    print("[AudioEngine] getDefaultInputDeviceID: AudioObjectGetPropertyData returned status=\(status)")
 
     guard status == noErr, inputDevice != kAudioObjectUnknown, inputDevice != 0 else {
         return nil
@@ -137,6 +139,7 @@ private func getAllInputDeviceIDs() -> [AudioDeviceID] {
         mElement: kAudioObjectPropertyElementMain
     )
 
+    print("[AudioEngine] getAllInputDeviceIDs: calling AudioObjectGetPropertyDataSize for device list...")
     var status = AudioObjectGetPropertyDataSize(
         AudioObjectID(kAudioObjectSystemObject),
         &address,
@@ -144,11 +147,13 @@ private func getAllInputDeviceIDs() -> [AudioDeviceID] {
         nil,
         &propertySize
     )
+    print("[AudioEngine] getAllInputDeviceIDs: AudioObjectGetPropertyDataSize returned status=\(status), propertySize=\(propertySize)")
     guard status == noErr else { return [] }
 
     let deviceCount = Int(propertySize) / MemoryLayout<AudioDeviceID>.size
     var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
 
+    print("[AudioEngine] getAllInputDeviceIDs: calling AudioObjectGetPropertyData for \(deviceCount) devices...")
     status = AudioObjectGetPropertyData(
         AudioObjectID(kAudioObjectSystemObject),
         &address,
@@ -157,10 +162,12 @@ private func getAllInputDeviceIDs() -> [AudioDeviceID] {
         &propertySize,
         &deviceIDs
     )
+    print("[AudioEngine] getAllInputDeviceIDs: AudioObjectGetPropertyData returned status=\(status)")
     guard status == noErr else { return [] }
 
     var inputDevices: [AudioDeviceID] = []
     for deviceID in deviceIDs {
+        print("[AudioEngine] getAllInputDeviceIDs: checking device \(deviceID) for input streams...")
         var hasInputStreams = false
         var inputAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreams,
@@ -175,6 +182,7 @@ private func getAllInputDeviceIDs() -> [AudioDeviceID] {
             nil,
             &inputPropertySize
         )
+        print("[AudioEngine] getAllInputDeviceIDs: device \(deviceID) inputStatus=\(inputStatus), inputPropertySize=\(inputPropertySize)")
         if inputStatus == noErr && inputPropertySize > 0 {
             hasInputStreams = true
         }
@@ -182,6 +190,7 @@ private func getAllInputDeviceIDs() -> [AudioDeviceID] {
             inputDevices.append(deviceID)
         }
     }
+    print("[AudioEngine] getAllInputDeviceIDs: returning \(inputDevices.count) input devices")
     return inputDevices
 }
 
@@ -193,6 +202,7 @@ private func getDeviceName(deviceID: AudioDeviceID) -> String {
         mElement: kAudioObjectPropertyElementMain
     )
 
+    print("[AudioEngine] getDeviceName(\(deviceID)): calling AudioObjectGetPropertyDataSize...")
     var status = AudioObjectGetPropertyDataSize(
         deviceID,
         &address,
@@ -200,9 +210,11 @@ private func getDeviceName(deviceID: AudioDeviceID) -> String {
         nil,
         &propertySize
     )
+    print("[AudioEngine] getDeviceName(\(deviceID)): AudioObjectGetPropertyDataSize returned status=\(status)")
     guard status == noErr else { return "Unknown Device" }
 
     var name: CFString = "" as CFString
+    print("[AudioEngine] getDeviceName(\(deviceID)): calling AudioObjectGetPropertyData...")
     status = AudioObjectGetPropertyData(
         deviceID,
         &address,
@@ -211,6 +223,7 @@ private func getDeviceName(deviceID: AudioDeviceID) -> String {
         &propertySize,
         &name
     )
+    print("[AudioEngine] getDeviceName(\(deviceID)): AudioObjectGetPropertyData returned status=\(status)")
     guard status == noErr else { return "Unknown Device" }
     return name as String
 }
@@ -270,16 +283,35 @@ public final class AudioEngine {
 
     #if os(macOS)
     public static func listAudioDevices() -> [AudioDevice] {
-        let defaultDeviceID = getDefaultInputDeviceID()
-        let deviceIDs = getAllInputDeviceIDs()
+        var devices: [AudioDevice] = []
+        let semaphore = DispatchSemaphore(value: 0)
+        let timeoutSeconds: Double = 5.0
 
-        return deviceIDs.map { deviceID in
-            AudioDevice(
-                id: deviceID,
-                name: getDeviceName(deviceID: deviceID),
-                isDefault: deviceID == defaultDeviceID
-            )
+        print("[AudioEngine] listAudioDevices: starting enumeration with \(timeoutSeconds)s timeout")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            print("[AudioEngine] listAudioDevices: enumeration started on background thread")
+            let defaultDeviceID = getDefaultInputDeviceID()
+            let deviceIDs = getAllInputDeviceIDs()
+
+            devices = deviceIDs.map { deviceID in
+                AudioDevice(
+                    id: deviceID,
+                    name: getDeviceName(deviceID: deviceID),
+                    isDefault: deviceID == defaultDeviceID
+                )
+            }
+            print("[AudioEngine] listAudioDevices: enumeration completed, found \(devices.count) devices")
+            semaphore.signal()
         }
+
+        let result = semaphore.wait(timeout: .now() + timeoutSeconds)
+        if result == .timedOut {
+            print("[AudioEngine] listAudioDevices: WARNING - enumeration timed out after \(timeoutSeconds) seconds")
+            return []
+        }
+        print("[AudioEngine] listAudioDevices: returning \(devices.count) devices")
+        return devices
     }
 
     public static func getDeviceName(deviceID: AudioDeviceID) -> String {
