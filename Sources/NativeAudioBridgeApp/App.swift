@@ -107,20 +107,31 @@ struct AudioBridgeApp: AsyncParsableCommand {
         
         print("🔍 Checking permissions and audio devices...")
 
+        print("[DEBUG] Creating AudioEngine...")
         let audioEngine = AudioEngine()
+        print("[DEBUG] AudioEngine initialized")
+        
+        print("[DEBUG] Creating StateManager...")
         let stateManager = StateManager()
+        print("[DEBUG] Creating SpeechRecognizer...")
         let speechRecognizer = SpeechRecognizer()
+        print("[DEBUG] Creating HotWordDetector...")
         let hotWordDetector = HotWordDetector(hotWord: config.hotWord)
+        print("[DEBUG] Creating CommandBuffer...")
         let commandBuffer = CommandBuffer(silenceTimeoutMs: config.silenceTimeoutMs, silenceThreshold: config.silenceThreshold)
+        print("[DEBUG] Creating CommandProcessor...")
         let commandProcessor = CommandProcessor()
+        print("[DEBUG] Creating keepalive DispatchGroup...")
         let keepAlive = DispatchGroup()
 
         let webhookDispatcher: WebhookDispatcher
         do {
+            print("[DEBUG] Creating WebhookDispatcher...")
             webhookDispatcher = try WebhookDispatcher(
                 webhookURL: config.webhookURL,
                 bearerToken: config.webhookToken
             )
+            print("[DEBUG] WebhookDispatcher created")
         } catch {
             log.error("Invalid webhook configuration: \(error.localizedDescription)")
             throw ExitCode.failure

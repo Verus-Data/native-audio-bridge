@@ -33,6 +33,8 @@ private enum AudioCheckResult {
 }
 
 private func checkAudioInputAvailability() -> AudioCheckResult {
+    print("[DEBUG] Querying CoreAudio for input devices...")
+    
     var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
     var inputDevice = AudioDeviceID()
     var address = AudioObjectPropertyAddress(
@@ -50,13 +52,18 @@ private func checkAudioInputAvailability() -> AudioCheckResult {
         &inputDevice
     )
 
+    print("[DEBUG] CoreAudio check returned status: \(status)")
+
     if status != noErr {
         return .audioSubsystemError("Failed to get default input device, error: \(status)")
     }
 
     if inputDevice == kAudioObjectUnknown || inputDevice == 0 {
+        print("[DEBUG] No audio input devices found")
         return .noInputDevice
     }
+    
+    print("[DEBUG] Found \(inputDevice) as default input device")
 
     address = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyStreamFormat,
@@ -94,15 +101,21 @@ public final class AudioEngine {
 
     public init() {
         #if os(macOS)
+        print("[DEBUG] Initializing AudioEngine...")
+        print("[DEBUG] Checking audio safety...")
         checkAudioSafety()
+        print("[DEBUG] Audio safety check complete: isAudioSafe = \(isAudioSafe)")
         if isAudioSafe {
+            print("[DEBUG] Creating AVAudioEngine...")
             engine = AVAudioEngine()
+            print("[DEBUG] Engine created: \(engine != nil)")
         }
         #endif
     }
 
     #if os(macOS)
     private func checkAudioSafety() {
+        print("[DEBUG] Starting CoreAudio device check...")
         let result = checkAudioInputAvailability()
         switch result {
         case .available:
