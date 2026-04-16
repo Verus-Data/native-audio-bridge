@@ -10,6 +10,7 @@ public enum AudioError: Error, LocalizedError {
     case microphonePermissionDenied
     case engineStartFailed(String)
     case audioSubsystemUnavailable(String)
+    case deviceNotFound(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,7 +22,21 @@ public enum AudioError: Error, LocalizedError {
             return "Failed to start audio engine: \(message)"
         case .audioSubsystemUnavailable(let message):
             return "Audio subsystem unavailable: \(message)"
+        case .deviceNotFound(let identifier):
+            return "Audio device not found: \(identifier). Use --list-devices to see available devices."
         }
+    }
+}
+
+public struct AudioDevice: Identifiable {
+    public let id: AudioDeviceID
+    public let name: String
+    public let isDefault: Bool
+
+    public init(id: AudioDeviceID, name: String, isDefault: Bool) {
+        self.id = id
+        self.name = name
+        self.isDefault = isDefault
     }
 }
 
@@ -89,12 +104,123 @@ private func checkAudioInputAvailability() -> AudioCheckResult {
 
     return .available
 }
+
+private func getDefaultInputDeviceID() -> AudioDeviceID? {
+    var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var inputDevice = AudioDeviceID()
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    let status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address,
+        0,
+        nil,
+        &propertySize,
+        &inputDevice
+    )
+
+    guard status == noErr, inputDevice != kAudioObjectUnknown, inputDevice != 0 else {
+        return nil
+    }
+    return inputDevice
+}
+
+private func getAllInputDeviceIDs() -> [AudioDeviceID] {
+    var propertySize = UInt32(0)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    var status = AudioObjectGetPropertyDataSize(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address,
+        0,
+        nil,
+        &propertySize
+    )
+    guard status == noErr else { return [] }
+
+    let deviceCount = Int(propertySize) / MemoryLayout<AudioDeviceID>.size
+    var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
+
+    status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address,
+        0,
+        nil,
+        &propertySize,
+        &deviceIDs
+    )
+    guard status == noErr else { return [] }
+
+    var inputDevices: [AudioDeviceID] = []
+    for deviceID in deviceIDs {
+        var hasInputStreams = false
+        var inputAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var inputPropertySize = UInt32(0)
+        let inputStatus = AudioObjectGetPropertyDataSize(
+            deviceID,
+            &inputAddress,
+            0,
+            nil,
+            &inputPropertySize
+        )
+        if inputStatus == noErr && inputPropertySize > 0 {
+            hasInputStreams = true
+        }
+        if hasInputStreams {
+            inputDevices.append(deviceID)
+        }
+    }
+    return inputDevices
+}
+
+private func getDeviceName(deviceID: AudioDeviceID) -> String {
+    var propertySize = UInt32(0)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyDeviceNameCFString,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    var status = AudioObjectGetPropertyDataSize(
+        deviceID,
+        &address,
+        0,
+        nil,
+        &propertySize
+    )
+    guard status == noErr else { return "Unknown Device" }
+
+    var name: CFString = "" as CFString
+    status = AudioObjectGetPropertyData(
+        deviceID,
+        &address,
+        0,
+        nil,
+        &propertySize,
+        &name
+    )
+    guard status == noErr else { return "Unknown Device" }
+    return name as String
+}
 #endif
 
 public final class AudioEngine {
     #if os(macOS)
     public var engine: AVAudioEngine?
     private var isAudioSafe: Bool = false
+    private var selectedInputDeviceID: AudioDeviceID?
     #else
     public let engine = AVAudioEngine()
     #endif
@@ -141,6 +267,55 @@ public final class AudioEngine {
     public func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
         onAudioBuffer = handler
     }
+
+    #if os(macOS)
+    public static func listAudioDevices() -> [AudioDevice] {
+        let defaultDeviceID = getDefaultInputDeviceID()
+        let deviceIDs = getAllInputDeviceIDs()
+
+        return deviceIDs.map { deviceID in
+            AudioDevice(
+                id: deviceID,
+                name: getDeviceName(deviceID: deviceID),
+                isDefault: deviceID == defaultDeviceID
+            )
+        }
+    }
+
+    public static func getDeviceName(deviceID: AudioDeviceID) -> String {
+        return getDeviceName(deviceID: deviceID)
+    }
+
+    public func setInputDevice(identifier: String) throws {
+        let devices = AudioEngine.listAudioDevices()
+
+        if let deviceID = UInt32(identifier), let device = devices.first(where: { $0.id == deviceID }) {
+            selectedInputDeviceID = device.id
+            return
+        }
+
+        let matchingDevice = devices.first { device in
+            device.name.lowercased() == identifier.lowercased() ||
+            device.name.lowercased().contains(identifier.lowercased())
+        }
+
+        if let device = matchingDevice {
+            selectedInputDeviceID = device.id
+            return
+        }
+
+        throw AudioError.deviceNotFound(identifier)
+    }
+
+    public func setInputDevice(id: AudioDeviceID) {
+        selectedInputDeviceID = id
+    }
+
+    public func getSelectedDeviceName() -> String? {
+        guard let deviceID = selectedInputDeviceID else { return nil }
+        return AudioEngine.getDeviceName(deviceID: deviceID)
+    }
+    #endif
 
     #if os(macOS)
     public static func checkAudioAvailable() throws {

@@ -42,6 +42,7 @@ public struct Configuration {
     public let webhookConfig: WebhookConfig
     public let fileOutput: FileOutputConfig
     public let logLevel: LogLevel
+    public let inputDevice: String?
 }
 
 public enum ConfigurationError: LocalizedError {
@@ -70,6 +71,7 @@ public final class ConfigurationManager {
     private static let envWebhookToken = "\(envPrefix)TOKEN"
     private static let envFilePath = "\(envPrefix)FILE_PATH"
     private static let envLogLevel = "\(envPrefix)LOG_LEVEL"
+    private static let envInputDevice = "\(envPrefix)INPUT_DEVICE"
 
     public static let defaultHotWord = "hey claW"
     public static let defaultCaseSensitive = false
@@ -96,7 +98,8 @@ public final class ConfigurationManager {
             webhookToken: "",
             webhookConfig: WebhookConfig(),
             fileOutput: FileOutputConfig(),
-            logLevel: Self.defaultLogLevel
+            logLevel: Self.defaultLogLevel,
+            inputDevice: nil
         )
 
         if let path {
@@ -142,7 +145,8 @@ public final class ConfigurationManager {
             webhookToken: parsed["webhook_token"],
             webhookConfig: webhookConfig,
             fileOutput: fileOutput,
-            logLevel: parsed["log_level"].flatMap { LogLevel(from: $0) }
+            logLevel: parsed["log_level"].flatMap { LogLevel(from: $0) },
+            inputDevice: parsed["input_device"]
         )
     }
 
@@ -161,7 +165,8 @@ public final class ConfigurationManager {
             webhookToken: env[Self.envWebhookToken],
             webhookConfig: nil,
             fileOutput: fileOutput,
-            logLevel: env[Self.envLogLevel].flatMap { LogLevel(from: $0) }
+            logLevel: env[Self.envLogLevel].flatMap { LogLevel(from: $0) },
+            inputDevice: env[Self.envInputDevice]
         )
     }
 
@@ -176,7 +181,8 @@ public final class ConfigurationManager {
             webhookToken: override.webhookToken ?? base.webhookToken,
             webhookConfig: override.webhookConfig ?? base.webhookConfig,
             fileOutput: override.fileOutput ?? base.fileOutput,
-            logLevel: override.logLevel ?? base.logLevel
+            logLevel: override.logLevel ?? base.logLevel,
+            inputDevice: override.inputDevice ?? base.inputDevice
         )
     }
 
@@ -225,6 +231,7 @@ private struct PartialConfiguration {
     let webhookConfig: WebhookConfig?
     let fileOutput: FileOutputConfig?
     let logLevel: LogLevel?
+    let inputDevice: String?
 }
 
 private enum YAMLParser {
