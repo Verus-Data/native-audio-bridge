@@ -22,6 +22,8 @@ struct AudioBridgeApp: AsyncParsableCommand {
               native-audio-bridge --dry-run                Validate config without starting
               native-audio-bridge --check-audio            Verify audio input is available
               native-audio-bridge --check-permissions     Check microphone and speech permissions
+              native-audio-bridge --list-devices          List available audio input devices
+              native-audio-bridge --input-device "Built-in Microphone"  Use specific device
               native-audio-bridge --config /path/to/config.yaml  Use custom config
             """,
         version: AppVersion.current
@@ -41,6 +43,14 @@ struct AudioBridgeApp: AsyncParsableCommand {
             help: "Check microphone and speech recognition permissions and diagnostics")
     var checkPermissions: Bool = false
 
+    #if os(macOS)
+    @Flag(name: .long, help: "List available audio input devices")
+    var listDevices: Bool = false
+
+    @Option(name: .long, help: "Audio input device ID or name to use (see --list-devices)")
+    var inputDevice: String?
+    #endif
+
     @Flag(name: [.customLong("verbose"), .customShort("v")],
             help: "Enable debug-level logging output")
     var verbose: Bool = false
@@ -49,6 +59,25 @@ struct AudioBridgeApp: AsyncParsableCommand {
     var generateConfig: String?
 
     func run() async throws {
+        #if os(macOS)
+        if listDevices {
+            print("Available audio input devices:")
+            print("")
+            let devices = AudioEngine.listAudioDevices()
+            if devices.isEmpty {
+                print("No audio input devices found.")
+            } else {
+                for device in devices {
+                    let defaultMarker = device.isDefault ? " [default]" : ""
+                    print("  \(device.id)\t\(device.name)\(defaultMarker)")
+                }
+            }
+            print("")
+            print("Use --input-device with the device ID or name to select a specific device.")
+            return
+        }
+        #endif
+
         let log = AppLogger.shared
 
         if let configOutputPath = generateConfig {
@@ -118,6 +147,20 @@ struct AudioBridgeApp: AsyncParsableCommand {
         print("[DEBUG] Creating AudioEngine...")
         let audioEngine = AudioEngine()
         print("[DEBUG] AudioEngine initialized")
+
+        #if os(macOS)
+        if let deviceIdentifier = inputDevice {
+            do {
+                try audioEngine.setInputDevice(identifier: deviceIdentifier)
+                if let deviceName = audioEngine.getSelectedDeviceName() {
+                    print("[DEBUG] Using input device: \(deviceName)")
+                }
+            } catch {
+                log.error("Failed to set input device: \(error.localizedDescription)")
+                throw ExitCode.failure
+            }
+        }
+        #endif
         
         print("[DEBUG] Creating StateManager...")
         let stateManager = StateManager()
