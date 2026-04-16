@@ -41,6 +41,10 @@ struct AudioBridgeApp: AsyncParsableCommand {
             help: "Check microphone and speech recognition permissions and diagnostics")
     var checkPermissions: Bool = false
 
+    @Flag(name: [.customLong("verbose"), .customShort("v")],
+            help: "Enable debug-level logging output")
+    var verbose: Bool = false
+
     @Option(name: .long, help: "Generate a default config file at the specified path")
     var generateConfig: String?
 
@@ -65,6 +69,10 @@ struct AudioBridgeApp: AsyncParsableCommand {
         }
 
         log.setLogLevel(config.logLevel)
+
+        if verbose {
+            log.setLogLevel(.debug)
+        }
 
         if dryRun {
             await performDryRun(config: config, configPath: resolvedConfigPath)
@@ -144,13 +152,9 @@ struct AudioBridgeApp: AsyncParsableCommand {
 
         hotWordDetector.onHotWordDetected = {
             log.info("Hot word detected. Transitioning to listening...")
-            stateManager.transition(to: .listening)
-            commandBuffer.startCapture()
-        }
-
-        print("[DEBUG] Setting up hot word detector callback...")
-        hotWordDetector.onHotWordDetected = {
-            log.info("Hot word detected. Transitioning to listening...")
+            if log.currentLevel == .debug {
+                print("\(timestamp()) Hot word detected: \"\(config.hotWord)\"")
+            }
             stateManager.transition(to: .listening)
             commandBuffer.startCapture()
         }
@@ -158,6 +162,9 @@ struct AudioBridgeApp: AsyncParsableCommand {
         print("[DEBUG] Setting up command buffer callback...")
         commandBuffer.onSilenceDetected = {
             log.info("Silence detected. Processing command...")
+            if log.currentLevel == .debug {
+                print("\(timestamp()) Silence detected")
+            }
             stateManager.transition(to: .processing)
 
             let transcript = speechRecognizer.currentTranscript
@@ -176,6 +183,9 @@ struct AudioBridgeApp: AsyncParsableCommand {
                 do {
                     try await webhookDispatcher.dispatch(payload: payload)
                     log.info("Command dispatched successfully")
+                    if log.currentLevel == .debug {
+                        print("\(timestamp()) Command dispatched: \(payload)")
+                    }
                 } catch {
                     log.error("Webhook dispatch failed: \(error.localizedDescription)")
                 }
@@ -188,11 +198,17 @@ struct AudioBridgeApp: AsyncParsableCommand {
             let detected = hotWordDetector.process(transcript: transcript)
             if !detected, stateManager.state == .listening {
                 log.debug("Partial: \(transcript)")
+                if log.currentLevel == .debug {
+                    print("\(timestamp()) [PARTIAL] \(transcript)")
+                }
             }
         }
 
         speechRecognizer.onFinalResult = { transcript in
             log.info("Final transcript: \(transcript)")
+            if log.currentLevel == .debug {
+                print("\(timestamp()) [FINAL] \(transcript)")
+            }
             if !commandBuffer.capturing {
                 stateManager.transition(to: .processing)
 
@@ -209,6 +225,9 @@ struct AudioBridgeApp: AsyncParsableCommand {
                     do {
                         try await webhookDispatcher.dispatch(payload: payload)
                         log.info("Command dispatched successfully")
+                        if log.currentLevel == .debug {
+                            print("\(timestamp()) Command dispatched: {\"command\":\"\(transcript)\"}")
+                        }
                     } catch {
                         log.error("Webhook dispatch failed: \(error.localizedDescription)")
                     }
@@ -726,4 +745,10 @@ private struct PermissionStatus {
     let granted: Bool
     let status: String
     let icon: String
+}
+
+private func timestamp() -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm:ss.SSS"
+    return formatter.string(from: Date())
 }
