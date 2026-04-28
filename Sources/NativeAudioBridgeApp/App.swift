@@ -24,7 +24,7 @@ extension AudioBridgeApp {
         ║  Mode: \(mode)                                               ║
         ║  Hot word: \"\(config.hotWord)\"                                           ║
         ║  Webhook: \(config.webhookURL.prefix(40))...  ║
-        ║  Output: \(config.outputMode.rawValue)                                          ║
+        ║  Output: \(config.outputMode.description)                                          ║
         ║  Log level: \(config.logLevel)                                        ║
         ╚══════════════════════════════════════════════════════════════╝
         """)

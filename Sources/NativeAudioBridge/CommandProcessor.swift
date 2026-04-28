@@ -30,21 +30,10 @@ public final class CommandProcessor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
-        let replacements: [(String, String)] = [
-            (" +", " "),
-            ("\\s+", " "),
-        ]
-        for (pattern, replacement) in replacements {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                let range = NSRange(result.startIndex..., in: result)
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    options: [],
-                    range: range,
-                    withTemplate: replacement
-                )
-            }
-        }
+        // Collapse multiple whitespace into single space
+        result = result.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
 
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return result

@@ -7,6 +7,27 @@ public struct Configuration {
     public let webhookURL: String
     public let webhookToken: String
     public let logLevel: LogLevel
+    public let outputMode: OutputMode
+    public let telegramBotToken: String
+    public let telegramChatId: String
+}
+
+public enum OutputMode: String, CaseIterable {
+    case webhook
+    case jsonlFile
+    case both
+    case telegram
+}
+
+extension OutputMode: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .webhook: return "webhook"
+        case .jsonlFile: return "jsonl-file"
+        case .both: return "both"
+        case .telegram: return "telegram"
+        }
+    }
 }
 
 public enum ConfigurationError: LocalizedError {
@@ -32,12 +53,16 @@ public final class ConfigurationManager {
     private static let envWebhookURL = "\(envPrefix)WEBHOOK_URL"
     private static let envWebhookToken = "\(envPrefix)TOKEN"
     private static let envLogLevel = "\(envPrefix)LOG_LEVEL"
+    private static let envOutputMode = "\(envPrefix)OUTPUT_MODE"
+    private static let envTelegramBotToken = "\(envPrefix)TELEGRAM_BOT_TOKEN"
+    private static let envTelegramChatId = "\(envPrefix)TELEGRAM_CHAT_ID"
 
     public static let defaultHotWord = "hey claW"
     public static let defaultSilenceTimeoutMs = 1500
     public static let defaultSilenceThreshold: Float = 0.01
     public static let defaultWebhookURL = "https://gateway.openclaw.io/hooks/agent"
     public static let defaultLogLevel = LogLevel.info
+    public static let defaultOutputMode = OutputMode.webhook
 
     private let env: [String: String]
 
@@ -52,7 +77,10 @@ public final class ConfigurationManager {
             silenceThreshold: Self.defaultSilenceThreshold,
             webhookURL: Self.defaultWebhookURL,
             webhookToken: "",
-            logLevel: Self.defaultLogLevel
+            logLevel: Self.defaultLogLevel,
+            outputMode: Self.defaultOutputMode,
+            telegramBotToken: "",
+            telegramChatId: ""
         )
 
         if let path {
@@ -77,7 +105,10 @@ public final class ConfigurationManager {
             silenceThreshold: parsed["silence_threshold"].flatMap { Float($0) },
             webhookURL: parsed["webhook_url"],
             webhookToken: parsed["webhook_token"],
-            logLevel: parsed["log_level"].flatMap { LogLevel(from: $0) }
+            logLevel: parsed["log_level"].flatMap { LogLevel(rawValue: $0.lowercased()) },
+            outputMode: parsed["output_mode"].flatMap { OutputMode(rawValue: $0) },
+            telegramBotToken: parsed["telegram_bot_token"],
+            telegramChatId: parsed["telegram_chat_id"]
         )
     }
 
@@ -88,7 +119,10 @@ public final class ConfigurationManager {
             silenceThreshold: env[Self.envSilenceThreshold].flatMap { Float($0) },
             webhookURL: env[Self.envWebhookURL],
             webhookToken: env[Self.envWebhookToken],
-            logLevel: env[Self.envLogLevel].flatMap { LogLevel(from: $0) }
+            logLevel: env[Self.envLogLevel].flatMap { LogLevel(rawValue: $0.lowercased()) },
+            outputMode: env[Self.envOutputMode].flatMap { OutputMode(rawValue: $0) },
+            telegramBotToken: env[Self.envTelegramBotToken],
+            telegramChatId: env[Self.envTelegramChatId]
         )
     }
 
@@ -99,21 +133,36 @@ public final class ConfigurationManager {
             silenceThreshold: override.silenceThreshold ?? base.silenceThreshold,
             webhookURL: override.webhookURL ?? base.webhookURL,
             webhookToken: override.webhookToken ?? base.webhookToken,
-            logLevel: override.logLevel ?? base.logLevel
+            logLevel: override.logLevel ?? base.logLevel,
+            outputMode: override.outputMode ?? base.outputMode,
+            telegramBotToken: override.telegramBotToken ?? base.telegramBotToken,
+            telegramChatId: override.telegramChatId ?? base.telegramChatId
         )
     }
 
     private func validate(config: Configuration) throws {
-        guard !config.webhookURL.isEmpty else {
-            throw ConfigurationError.missingRequiredField("webhookURL")
+        if config.outputMode == .webhook || config.outputMode == .both {
+            guard !config.webhookURL.isEmpty else {
+                throw ConfigurationError.missingRequiredField("webhookURL")
+            }
+            guard let webhookURL = URL(string: config.webhookURL),
+                  webhookURL.scheme != nil else {
+                throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL with scheme")
+            }
+            guard !config.webhookToken.isEmpty else {
+                throw ConfigurationError.missingRequiredField("webhookToken (set NATIVE_AUDIO_BRIDGE_TOKEN or configure webhook_token)")
+            }
         }
-        guard let webhookURL = URL(string: config.webhookURL),
-              webhookURL.scheme != nil else {
-            throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL with scheme")
+
+        if config.outputMode == .telegram {
+            guard !config.telegramBotToken.isEmpty else {
+                throw ConfigurationError.missingRequiredField("telegramBotToken (set NATIVE_AUDIO_BRIDGE_TELEGRAM_BOT_TOKEN or configure telegram_bot_token)")
+            }
+            guard !config.telegramChatId.isEmpty else {
+                throw ConfigurationError.missingRequiredField("telegramChatId (set NATIVE_AUDIO_BRIDGE_TELEGRAM_CHAT_ID or configure telegram_chat_id)")
+            }
         }
-        guard !config.webhookToken.isEmpty else {
-            throw ConfigurationError.missingRequiredField("webhookToken (set NATIVE_AUDIO_BRIDGE_TOKEN or configure webhook_token)")
-        }
+
         guard config.silenceTimeoutMs > 0 else {
             throw ConfigurationError.invalidValue(field: "silenceTimeoutMs", reason: "must be greater than 0")
         }
@@ -126,17 +175,6 @@ public final class ConfigurationManager {
     }
 }
 
-extension LogLevel {
-    public init?(from string: String) {
-        switch string.lowercased() {
-        case "debug": self = .debug
-        case "info": self = .info
-        case "error": self = .error
-        default: return nil
-        }
-    }
-}
-
 private struct PartialConfiguration {
     let hotWord: String?
     let silenceTimeoutMs: Int?
@@ -144,6 +182,9 @@ private struct PartialConfiguration {
     let webhookURL: String?
     let webhookToken: String?
     let logLevel: LogLevel?
+    let outputMode: OutputMode?
+    let telegramBotToken: String?
+    let telegramChatId: String?
 }
 
 private enum YAMLParser {

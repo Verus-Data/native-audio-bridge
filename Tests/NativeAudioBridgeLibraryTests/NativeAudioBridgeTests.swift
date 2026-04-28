@@ -277,12 +277,12 @@ final class ConfigurationManagerTests: XCTestCase {
 
 final class LogLevelTests: XCTestCase {
 
-    func testFromString() {
-        XCTAssertEqual(LogLevel(from: "debug"), LogLevel.debug)
-        XCTAssertEqual(LogLevel(from: "info"), LogLevel.info)
-        XCTAssertEqual(LogLevel(from: "error"), LogLevel.error)
-        XCTAssertEqual(LogLevel(from: "DEBUG"), LogLevel.debug)
-        XCTAssertNil(LogLevel(from: "invalid"))
+    func testFromRawValue() {
+        XCTAssertEqual(LogLevel(rawValue: "debug"), LogLevel.debug)
+        XCTAssertEqual(LogLevel(rawValue: "info"), LogLevel.info)
+        XCTAssertEqual(LogLevel(rawValue: "error"), LogLevel.error)
+        XCTAssertEqual(LogLevel(rawValue: "DEBUG".lowercased()), LogLevel.debug)
+        XCTAssertNil(LogLevel(rawValue: "invalid"))
     }
 }
 
@@ -308,5 +308,183 @@ final class VersionTests: XCTestCase {
         if parts.count >= 1 {
             XCTAssertGreaterThanOrEqual(parts[0], 0)
         }
+    }
+}
+
+final class OutputModeTests: XCTestCase {
+
+    func testAllCases() {
+        XCTAssertEqual(OutputMode.allCases.count, 4)
+        XCTAssertTrue(OutputMode.allCases.contains(.webhook))
+        XCTAssertTrue(OutputMode.allCases.contains(.jsonlFile))
+        XCTAssertTrue(OutputMode.allCases.contains(.both))
+        XCTAssertTrue(OutputMode.allCases.contains(.telegram))
+    }
+
+    func testRawValues() {
+        XCTAssertEqual(OutputMode.webhook.rawValue, "webhook")
+        XCTAssertEqual(OutputMode.jsonlFile.rawValue, "jsonlFile")
+        XCTAssertEqual(OutputMode.both.rawValue, "both")
+        XCTAssertEqual(OutputMode.telegram.rawValue, "telegram")
+    }
+
+    func testDescriptions() {
+        XCTAssertEqual(OutputMode.webhook.description, "webhook")
+        XCTAssertEqual(OutputMode.jsonlFile.description, "jsonl-file")
+        XCTAssertEqual(OutputMode.both.description, "both")
+        XCTAssertEqual(OutputMode.telegram.description, "telegram")
+    }
+
+    func testInitFromRawValue() {
+        XCTAssertEqual(OutputMode(rawValue: "webhook"), .webhook)
+        XCTAssertEqual(OutputMode(rawValue: "jsonlFile"), .jsonlFile)
+        XCTAssertEqual(OutputMode(rawValue: "both"), .both)
+        XCTAssertEqual(OutputMode(rawValue: "telegram"), .telegram)
+        XCTAssertNil(OutputMode(rawValue: "invalid"))
+    }
+}
+
+final class TelegramAudioExporterTests: XCTestCase {
+
+    func testInitValidConfig() {
+        let exporter = try? TelegramAudioExporter(
+            botToken: "123456:ABCdef",
+            chatId: "-1001234567890"
+        )
+        XCTAssertNotNil(exporter)
+    }
+
+    func testInitEmptyBotTokenFails() {
+        XCTAssertThrowsError(try TelegramAudioExporter(
+            botToken: "",
+            chatId: "-1001234567890"
+        )) { error in
+            XCTAssertTrue(error is TelegramExporterError)
+            if let telegramError = error as? TelegramExporterError {
+                XCTAssertEqual(telegramError, .invalidBotToken)
+            }
+        }
+    }
+
+    func testInitEmptyChatIdFails() {
+        XCTAssertThrowsError(try TelegramAudioExporter(
+            botToken: "123456:ABCdef",
+            chatId: ""
+        )) { error in
+            XCTAssertTrue(error is TelegramExporterError)
+            if let telegramError = error as? TelegramExporterError {
+                XCTAssertEqual(telegramError, .invalidChatId)
+            }
+        }
+    }
+
+    func testWAVConversionEmptyBuffersFails() {
+        let exporter = try! TelegramAudioExporter(
+            botToken: "123456:ABCdef",
+            chatId: "-1001234567890"
+        )
+        XCTAssertThrowsError(try exporter.convertToWAV(buffers: [])) { error in
+            XCTAssertTrue(error is TelegramExporterError)
+        }
+    }
+
+    func testWAVConversionProducesValidData() throws {
+        let exporter = try TelegramAudioExporter(
+            botToken: "123456:ABCdef",
+            chatId: "-1001234567890"
+        )
+        // Create sample PCM float32 data
+        var floats: [Float] = []
+        for i in 0..<1024 {
+            floats.append(sin(Float(i) * 0.1))
+        }
+        let pcmData = floats.withUnsafeBufferPointer { Data(buffer: $0) }
+
+        let wavData = try exporter.convertToWAV(buffers: [pcmData])
+        XCTAssertGreaterThan(wavData.count, 0)
+
+        // Check WAV header starts with "RIFF"
+        XCTAssertEqual(wavData[0], 0x52) // R
+        XCTAssertEqual(wavData[1], 0x49) // I
+        XCTAssertEqual(wavData[2], 0x46) // F
+        XCTAssertEqual(wavData[3], 0x46) // F
+    }
+
+    func testWAVHeaderFormatIsCorrect() throws {
+        let exporter = try TelegramAudioExporter(
+            botToken: "123456:ABCdef",
+            chatId: "-1001234567890"
+        )
+        // Create 1 second of silence at 16kHz, 1 channel, 32-bit float
+        let sampleCount = 16000
+        let floats = [Float](repeating: 0.0, count: sampleCount)
+        let pcmData = floats.withUnsafeBufferPointer { Data(buffer: $0) }
+
+        let wavData = try exporter.convertToWAV(buffers: [pcmData], sampleRate: 16000)
+
+        // Check "WAVE" marker at offset 8
+        XCTAssertEqual(wavData[8], 0x57) // W
+        XCTAssertEqual(wavData[9], 0x41) // A
+        XCTAssertEqual(wavData[10], 0x56) // V
+        XCTAssertEqual(wavData[11], 0x45) // E
+
+        // Chunk size should be 36 + data size
+        let dataSize = UInt32(sampleCount * MemoryLayout<Float>.size)
+        let expectedFileSize = 36 + dataSize
+        let actualFileSize = wavData[4...7].withUnsafeBytes { $0.load(as: UInt32.self) }
+        XCTAssertEqual(actualFileSize.littleEndian, expectedFileSize)
+    }
+}
+
+final class TelegramConfigurationTests: XCTestCase {
+
+    func testTelegramModeRequiresBotToken() {
+        let env: [String: String] = [
+            "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+            "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+            "NATIVE_AUDIO_BRIDGE_TELEGRAM_CHAT_ID": "-1001234567890"
+        ]
+        let manager = ConfigurationManager(environment: env)
+        XCTAssertThrowsError(try manager.load()) { error in
+            XCTAssertTrue(error is ConfigurationError)
+        }
+    }
+
+    func testTelegramModeRequiresChatId() {
+        let env: [String: String] = [
+            "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+            "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+            "NATIVE_AUDIO_BRIDGE_TELEGRAM_BOT_TOKEN": "123456:ABCdef"
+        ]
+        let manager = ConfigurationManager(environment: env)
+        XCTAssertThrowsError(try manager.load()) { error in
+            XCTAssertTrue(error is ConfigurationError)
+        }
+    }
+
+    func testTelegramModeWithValidConfig() throws {
+        let env: [String: String] = [
+            "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+            "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+            "NATIVE_AUDIO_BRIDGE_TELEGRAM_BOT_TOKEN": "123456:ABCdef",
+            "NATIVE_AUDIO_BRIDGE_TELEGRAM_CHAT_ID": "-1001234567890"
+        ]
+        let manager = ConfigurationManager(environment: env)
+        let config = try manager.load()
+        XCTAssertEqual(config.outputMode, .telegram)
+        XCTAssertEqual(config.telegramBotToken, "123456:ABCdef")
+        XCTAssertEqual(config.telegramChatId, "-1001234567890")
+    }
+
+    func testWebhookModeDoesNotRequireTelegramConfig() throws {
+        let env: [String: String] = [
+            "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token"
+        ]
+        let manager = ConfigurationManager(environment: env)
+        let config = try manager.load()
+        XCTAssertEqual(config.outputMode, .webhook)
+        // telegramBotToken and telegramChatId should be empty but that's OK for webhook mode
+        XCTAssertEqual(config.telegramBotToken, "")
+        XCTAssertEqual(config.telegramChatId, "")
     }
 }

@@ -300,11 +300,11 @@ func testConfigurationManagerEnvOverridesFile() {
 }
 
 func testLogLevelFromString() {
-    assertEqual(LogLevel(from: "debug"), LogLevel.debug, "debug should parse from string")
-    assertEqual(LogLevel(from: "info"), LogLevel.info, "info should parse from string")
-    assertEqual(LogLevel(from: "error"), LogLevel.error, "error should parse from string")
-    assertEqual(LogLevel(from: "DEBUG"), LogLevel.debug, "DEBUG should parse case-insensitively")
-    assertNil(LogLevel(from: "invalid"), "invalid log level should return nil")
+    assertEqual(LogLevel(rawValue: "debug"), LogLevel.debug, "debug should parse from string")
+    assertEqual(LogLevel(rawValue: "info"), LogLevel.info, "info should parse from string")
+    assertEqual(LogLevel(rawValue: "error"), LogLevel.error, "error should parse from string")
+    assertEqual(LogLevel(rawValue: "DEBUG".lowercased()), LogLevel.debug, "DEBUG should parse case-insensitively")
+    assertNil(LogLevel(rawValue: "invalid"), "invalid log level should return nil")
 }
 
 func testAppLoggerLogLevelFiltering() {
