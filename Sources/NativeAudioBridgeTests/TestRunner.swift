@@ -327,11 +327,196 @@ func testVersionString() {
     }
 }
 
+// MARK: - OutputModeTests
+
+func testOutputModeAllCases() {
+    assertEqual(OutputMode.allCases.count, 4, "should have 4 output modes")
+    assert(OutputMode.allCases.contains(.webhook), "should contain webhook")
+    assert(OutputMode.allCases.contains(.jsonlFile), "should contain jsonlFile")
+    assert(OutputMode.allCases.contains(.both), "should contain both")
+    assert(OutputMode.allCases.contains(.telegram), "should contain telegram")
+}
+
+func testOutputModeRawValues() {
+    assertEqual(OutputMode.webhook.rawValue, "webhook", "webhook rawValue")
+    assertEqual(OutputMode.jsonlFile.rawValue, "jsonlFile", "jsonlFile rawValue")
+    assertEqual(OutputMode.both.rawValue, "both", "both rawValue")
+    assertEqual(OutputMode.telegram.rawValue, "telegram", "telegram rawValue")
+}
+
+func testOutputModeDescriptions() {
+    assertEqual(OutputMode.webhook.description, "webhook", "webhook description")
+    assertEqual(OutputMode.jsonlFile.description, "jsonl-file", "jsonlFile description")
+    assertEqual(OutputMode.both.description, "both", "both description")
+    assertEqual(OutputMode.telegram.description, "telegram", "telegram description")
+}
+
+func testOutputModeInitFromRawValue() {
+    assertEqual(OutputMode(rawValue: "webhook"), .webhook, "webhook from rawValue")
+    assertEqual(OutputMode(rawValue: "jsonlFile"), .jsonlFile, "jsonlFile from rawValue")
+    assertEqual(OutputMode(rawValue: "both"), .both, "both from rawValue")
+    assertEqual(OutputMode(rawValue: "telegram"), .telegram, "telegram from rawValue")
+    assertNil(OutputMode(rawValue: "invalid"), "invalid rawValue should be nil")
+}
+
+// MARK: - TelegramAudioExporterTests
+
+func testTelegramExporterInitValidConfig() {
+    let exporter = try? TelegramAudioExporter(
+        botToken: "123456:ABCdef",
+        chatId: "-1001234567890"
+    )
+    assertNotNil(exporter, "exporter should be created with valid config")
+}
+
+func testTelegramExporterInitEmptyBotTokenFails() {
+    do {
+        _ = try TelegramAudioExporter(botToken: "", chatId: "-1001234567890")
+        assert(false, "should throw for empty bot token")
+    } catch TelegramExporterError.invalidBotToken {
+        // expected
+    } catch {
+        assert(false, "unexpected error type: \(error)")
+    }
+}
+
+func testTelegramExporterInitEmptyChatIdFails() {
+    do {
+        _ = try TelegramAudioExporter(botToken: "123456:ABCdef", chatId: "")
+        assert(false, "should throw for empty chat ID")
+    } catch TelegramExporterError.invalidChatId {
+        // expected
+    } catch {
+        assert(false, "unexpected error type: \(error)")
+    }
+}
+
+func testTelegramExporterWAVConversionEmptyBuffersFails() {
+    let exporter = try! TelegramAudioExporter(
+        botToken: "123456:ABCdef",
+        chatId: "-1001234567890"
+    )
+    do {
+        _ = try exporter.convertToWAV(buffers: [])
+        assert(false, "should throw for empty buffers")
+    } catch is TelegramExporterError {
+        // expected
+    } catch {
+        assert(false, "unexpected error type: \(error)")
+    }
+}
+
+func testTelegramExporterWAVConversionProducesValidData() throws {
+    let exporter = try TelegramAudioExporter(
+        botToken: "123456:ABCdef",
+        chatId: "-1001234567890"
+    )
+    var floats: [Float] = []
+    for i in 0..<1024 {
+        floats.append(sin(Float(i) * 0.1))
+    }
+    let pcmData = floats.withUnsafeBufferPointer { Data(buffer: $0) }
+
+    let wavData = try exporter.convertToWAV(buffers: [pcmData])
+    assert(wavData.count > 0, "WAV data should not be empty")
+
+    // Check WAV header starts with "RIFF"
+    assertEqual(wavData[0], 0x52, "R")
+    assertEqual(wavData[1], 0x49, "I")
+    assertEqual(wavData[2], 0x46, "F")
+    assertEqual(wavData[3], 0x46, "F")
+}
+
+func testTelegramExporterWAVHeaderFormatIsCorrect() throws {
+    let exporter = try TelegramAudioExporter(
+        botToken: "123456:ABCdef",
+        chatId: "-1001234567890"
+    )
+    let sampleCount = 16000
+    let floats = [Float](repeating: 0.0, count: sampleCount)
+    let pcmData = floats.withUnsafeBufferPointer { Data(buffer: $0) }
+
+    let wavData = try exporter.convertToWAV(buffers: [pcmData], sampleRate: 16000)
+
+    // Check "WAVE" marker at offset 8
+    assertEqual(wavData[8], 0x57, "W")
+    assertEqual(wavData[9], 0x41, "A")
+    assertEqual(wavData[10], 0x56, "V")
+    assertEqual(wavData[11], 0x45, "E")
+
+    // Chunk size should be 36 + data size
+    let dataSize = UInt32(sampleCount * MemoryLayout<Float>.size)
+    let expectedFileSize = 36 + dataSize
+    let actualFileSize = wavData[4...7].withUnsafeBytes { $0.load(as: UInt32.self) }
+    assertEqual(actualFileSize.littleEndian, expectedFileSize, "file size in header should match")
+}
+
+// MARK: - TelegramConfigurationTests
+
+func testTelegramModeRequiresBotToken() {
+    let env: [String: String] = [
+        "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+        "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+        "NATIVE_AUDIO_BRIDGE_TELEGRAM_CHAT_ID": "-1001234567890"
+    ]
+    let manager = ConfigurationManager(environment: env)
+    do {
+        _ = try manager.load()
+        assert(false, "should throw when telegram bot token is missing")
+    } catch is ConfigurationError {
+        // expected
+    } catch {
+        assert(false, "unexpected error type: \(error)")
+    }
+}
+
+func testTelegramModeRequiresChatId() {
+    let env: [String: String] = [
+        "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+        "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+        "NATIVE_AUDIO_BRIDGE_TELEGRAM_BOT_TOKEN": "123456:ABCdef"
+    ]
+    let manager = ConfigurationManager(environment: env)
+    do {
+        _ = try manager.load()
+        assert(false, "should throw when telegram chat ID is missing")
+    } catch is ConfigurationError {
+        // expected
+    } catch {
+        assert(false, "unexpected error type: \(error)")
+    }
+}
+
+func testTelegramModeWithValidConfig() throws {
+    let env: [String: String] = [
+        "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token",
+        "NATIVE_AUDIO_BRIDGE_OUTPUT_MODE": "telegram",
+        "NATIVE_AUDIO_BRIDGE_TELEGRAM_BOT_TOKEN": "123456:ABCdef",
+        "NATIVE_AUDIO_BRIDGE_TELEGRAM_CHAT_ID": "-1001234567890"
+    ]
+    let manager = ConfigurationManager(environment: env)
+    let config = try manager.load()
+    assertEqual(config.outputMode, .telegram, "output mode should be telegram")
+    assertEqual(config.telegramBotToken, "123456:ABCdef", "bot token should match")
+    assertEqual(config.telegramChatId, "-1001234567890", "chat ID should match")
+}
+
+func testWebhookModeDoesNotRequireTelegramConfig() throws {
+    let env: [String: String] = [
+        "NATIVE_AUDIO_BRIDGE_TOKEN": "test-token"
+    ]
+    let manager = ConfigurationManager(environment: env)
+    let config = try manager.load()
+    assertEqual(config.outputMode, .webhook, "default output mode should be webhook")
+    assertEqual(config.telegramBotToken, "", "telegram bot token should be empty")
+    assertEqual(config.telegramChatId, "", "telegram chat ID should be empty")
+}
+
 @main
 struct TestRunner {
     static func main() {
         print("Running NativeAudioBridge Tests...\n")
-        let tests: [(String, () -> Void)] = [
+        let tests: [(String, () throws -> Void)] = [
             ("testCommandBufferStartCaptureSetsCapturing", testCommandBufferStartCaptureSetsCapturing),
             ("testCommandBufferStopCaptureClearsCapturing", testCommandBufferStopCaptureClearsCapturing),
             ("testCommandBufferAppendStoresData", testCommandBufferAppendStoresData),
@@ -363,6 +548,20 @@ struct TestRunner {
             ("testLogLevelFromString", testLogLevelFromString),
             ("testAppLoggerLogLevelFiltering", testAppLoggerLogLevelFiltering),
             ("testVersionString", testVersionString),
+            ("testOutputModeAllCases", testOutputModeAllCases),
+            ("testOutputModeRawValues", testOutputModeRawValues),
+            ("testOutputModeDescriptions", testOutputModeDescriptions),
+            ("testOutputModeInitFromRawValue", testOutputModeInitFromRawValue),
+            ("testTelegramExporterInitValidConfig", testTelegramExporterInitValidConfig),
+            ("testTelegramExporterInitEmptyBotTokenFails", testTelegramExporterInitEmptyBotTokenFails),
+            ("testTelegramExporterInitEmptyChatIdFails", testTelegramExporterInitEmptyChatIdFails),
+            ("testTelegramExporterWAVConversionEmptyBuffersFails", testTelegramExporterWAVConversionEmptyBuffersFails),
+            ("testTelegramExporterWAVConversionProducesValidData", testTelegramExporterWAVConversionProducesValidData),
+            ("testTelegramExporterWAVHeaderFormatIsCorrect", testTelegramExporterWAVHeaderFormatIsCorrect),
+            ("testTelegramModeRequiresBotToken", testTelegramModeRequiresBotToken),
+            ("testTelegramModeRequiresChatId", testTelegramModeRequiresChatId),
+            ("testTelegramModeWithValidConfig", testTelegramModeWithValidConfig),
+            ("testWebhookModeDoesNotRequireTelegramConfig", testWebhookModeDoesNotRequireTelegramConfig),
         ]
         var passed = 0
         var failed = 0
@@ -371,7 +570,14 @@ struct TestRunner {
             print("Running \(name)...", terminator: "")
             fflush(stdout)
             currentFailures = testsFailed
-            testFn()
+            do {
+                try testFn()
+            } catch {
+                failed += 1
+                testsFailed += 1
+                print(" FAIL (threw error: \(error))")
+                continue
+            }
             if testsFailed == currentFailures {
                 passed += 1
                 print(" PASS")

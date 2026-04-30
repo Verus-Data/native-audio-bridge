@@ -40,11 +40,8 @@ let package = Package(
                 .unsafeFlags(["-parse-as-library"])
             ]
         ),
-        .testTarget(
-            name: "NativeAudioBridgeLibraryTests",
-            dependencies: ["NativeAudioBridgeLibrary"],
-            path: "Tests/NativeAudioBridgeLibraryTests"
-        )
+        // XCTest-based test target removed — XCTest is unavailable without Xcode CLT.
+        // All tests are covered by the NativeAudioBridgeTestRunner standalone target.
     ],
     swiftLanguageVersions: [.v5]
 )
