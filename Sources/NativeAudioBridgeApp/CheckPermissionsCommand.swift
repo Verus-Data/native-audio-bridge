@@ -1,3 +1,9 @@
+import ArgumentParser
+import AVFoundation
+import Foundation
+import NativeAudioBridgeLibrary
+import Speech
+
 struct CheckPermissionsCommand: AsyncParsableCommand {
     
     static let configuration = CommandConfiguration(
@@ -15,29 +21,45 @@ struct CheckPermissionsCommand: AsyncParsableCommand {
         }
         
         print("Checking speech recognition permission...")
-        let speechGranted = await withCheckedContinuation { continuation in
-            Task {
-                AVAudioSession.sharedInstance().requestPermission { permitted in
-                    continuation.resume(returning: permitted)
-                }
-            }
-        }
-        
-        if speechGranted {
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        let speechAuthorized = speechStatus == .authorized
+        if speechAuthorized {
             print("✅ Speech Recognition: Authorized")
         } else {
-            print("❌ Speech Recognition: Denied")
+            let statusStr: String
+            switch speechStatus {
+            case .denied: statusStr = "Denied"
+            case .restricted: statusStr = "Restricted"
+            case .notDetermined: statusStr = "Not determined (may prompt on first use)"
+            default: statusStr = "Unknown"
+            }
+            print("❌ Speech Recognition: \(statusStr)")
         }
         
         print()
-        print("Next steps if permissions are denied:")
-        print("1. Go to System Preferences → Privacy & Security → Microphone")
-        print("2. Check 'Voice Control' or 'Listening' for our app")
-        print("3. Enable permissions and restart the application")
         
-        print()
+        if !microphoneGranted || !speechAuthorized {
+            print("Next steps to enable permissions:")
+            print("1. Go to System Settings → Privacy & Security → Microphone")
+            print("2. Enable access for this application")
+            print("3. Go to System Settings → Privacy & Security → Speech Recognition")
+            print("4. Enable access for this application")
+            print()
+        }
+        
         print("Note: On macOS, the screen must be unlocked for speech recognition")
         print("to work properly. If the screen is locked, you won't get recognition.")
+        
+        #if os(macOS)
+        print()
+        print("Audio device status:")
+        do {
+            try AudioEngine.checkAudioAvailable()
+            print("✅ Audio subsystem available")
+        } catch {
+            print("❌ Audio issue: \(error.localizedDescription)")
+        }
+        #endif
     }
     
     private func requestMicrophonePermission() async -> Bool {

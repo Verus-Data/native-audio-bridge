@@ -14,14 +14,58 @@ struct RunCommand: AsyncParsableCommand {
             help: "Path to YAML configuration file")
     var configPath: String?
 
+    #if os(macOS)
+    @Flag(name: .long, help: "List available audio input devices and exit")
+    var listDevices: Bool = false
+
+    @Option(name: .long, help: "Specify audio input device by name or numeric ID")
+    var inputDevice: String?
+    #endif
+
     func run() async throws {
         let log = AppLogger.shared
+
+        #if os(macOS)
+        if listDevices {
+            let devices = AudioEngine.listAudioDevices()
+            if devices.isEmpty {
+                print("No audio input devices found.")
+                print("Connect a microphone and check System Settings > Sound > Input.")
+            } else {
+                print("Available audio input devices:")
+                print("")
+                for device in devices {
+                    let marker = device.isDefault ? " (default)" : ""
+                    print("  [\(device.id)] \(device.name)\(marker)")
+                }
+                print("")
+                print("Use --input-device <name-or-id> to select a specific device.")
+            }
+            return
+        }
+        #endif
 
         guard let config = AudioBridgeApp.checkConfigFile(configPath) else {
             throw ExitCode.failure
         }
 
         log.setLogLevel(config.logLevel)
+
+        #if os(macOS)
+        if let deviceIdentifier = config.inputDevice ?? inputDevice {
+            let audioEngine = AudioEngine()
+            do {
+                try audioEngine.setInputDevice(identifier: deviceIdentifier)
+                if let name = audioEngine.getSelectedDeviceName() {
+                    log.info("Selected input device: \(name)")
+                }
+            } catch {
+                log.error("Failed to set input device: \(error.localizedDescription)")
+                throw ExitCode.failure
+            }
+        }
+        #endif
+
         AudioBridgeApp.printStartupBanner(config: config)
         
         let audioEngine = AudioEngine()

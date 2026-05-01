@@ -10,7 +10,7 @@ struct AudioBridgeApp: AsyncParsableCommand {
         commandName: "native-audio-bridge",
         abstract: "Native macOS voice interaction layer for OpenClaw",
         version: AppVersion.current,
-        subcommands: [RunCommand.self, StatusCommand.self, CheckPermissionsCommand.self, ValidateConfigCommand.self],
+        subcommands: [RunCommand.self, StatusCommand.self, CheckPermissionsCommand.self],
         defaultSubcommand: RunCommand.self
     )
 }
@@ -24,7 +24,7 @@ extension AudioBridgeApp {
         ║  Mode: \(mode)                                               ║
         ║  Hot word: \"\(config.hotWord)\"                                           ║
         ║  Webhook: \(config.webhookURL.prefix(40))...  ║
-        ║  Output: \(config.outputMode.rawValue)                                          ║
+        ║  Output: \(config.outputMode.description)                                          ║
         ║  Log level: \(config.logLevel)                                        ║
         ╚══════════════════════════════════════════════════════════════╝
         """)
