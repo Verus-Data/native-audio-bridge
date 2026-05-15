@@ -8,13 +8,6 @@ public final class OutputManager {
     private let jsonlPath: URL?
     private let logger = AppLogger.shared
     
-    /// Output modes supported by the manager
-    public enum OutputMode {
-        case webhook
-        case jsonlFile
-        case both
-    }
-    
     /// Current output mode
     public private(set) var mode: OutputMode
     
@@ -165,14 +158,4 @@ public enum OutputError: Error {
     case fileWriteFailed(Error)
     case timeout
     case partialFailure([Error])
-}
-
-extension OutputManager.OutputMode: CustomStringConvertible {
-    public var description: String {
-        switch self {
-        case .webhook: return "webhook"
-        case .jsonlFile: return "jsonl-file"
-        case .both: return "both"
-        }
-    }
 }
