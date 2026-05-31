@@ -46,13 +46,6 @@ public final class SpeechRecognizer {
         request.requiresOnDeviceRecognition = false
         self.recognitionRequest = request
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
-
         let task = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             let onPartial = self.onPartialResult
@@ -79,6 +72,10 @@ public final class SpeechRecognizer {
 
         self.recognitionTask = task
         self.isRunning = true
+    }
+
+    public func appendBuffer(_ buffer: AVAudioPCMBuffer) {
+        recognitionRequest?.append(buffer)
     }
 
     public func stopStreaming() {

@@ -160,12 +160,6 @@ struct RunCommand: AsyncParsableCommand {
             log.error("Speech recognition error: \(error.localizedDescription)")
         }
 
-        audioEngine.setOnAudioBuffer { data in
-            if commandBuffer.capturing {
-                commandBuffer.append(data)
-            }
-        }
-
         log.info("Requesting microphone permission...")
         let micAuthorized = await requestMicrophonePermission()
         guard micAuthorized else {
@@ -193,10 +187,20 @@ struct RunCommand: AsyncParsableCommand {
         }
 
         do {
-            let nativeEngine = AVAudioEngine()
-            try nativeEngine.start()
-            try speechRecognizer.startStreaming(audioEngine: nativeEngine)
-            log.info("Speech recognizer streaming started.")
+            if let engine = audioEngine.engine {
+                try speechRecognizer.startStreaming(audioEngine: engine)
+                audioEngine.setOnAudioBuffer { data in
+                    if let pcmBuffer = data.toPCMBuffer(format: engine.inputNode.outputFormat(forBus: 0)) {
+                        speechRecognizer.appendBuffer(pcmBuffer)
+                    }
+                    if commandBuffer.capturing {
+                        commandBuffer.append(data)
+                    }
+                }
+                log.info("Speech recognizer streaming started.")
+            } else {
+                log.error("Audio engine not initialized.")
+            }
         } catch {
             log.error("Failed to start speech recognizer: \(error.localizedDescription)")
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
@@ -225,5 +229,20 @@ struct RunCommand: AsyncParsableCommand {
                 continuation.resume(returning: granted)
             }
         }
+    }
+}
+
+private extension Data {
+    func toPCMBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let frameLength = count / MemoryLayout<Float>.size
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameLength)) else {
+            return nil
+        }
+        buffer.frameLength = AVAudioFrameCount(frameLength)
+        withUnsafeBytes { rawBuf in
+            guard let base = rawBuf.baseAddress else { return }
+            buffer.floatChannelData?[0].update(from: base.assumingMemoryBound(to: Float.self), count: frameLength)
+        }
+        return buffer
     }
 }
