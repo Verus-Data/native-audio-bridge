@@ -211,15 +211,18 @@ public final class ConfigurationManager {
     }
 
     private func validate(config: Configuration) throws {
-        guard !config.webhookURL.isEmpty else {
-            throw ConfigurationError.missingRequiredField("webhookURL")
-        }
-        guard let webhookURL = URL(string: config.webhookURL),
-              webhookURL.scheme != nil else {
-            throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL with scheme")
-        }
-        guard !config.webhookToken.isEmpty else {
-            throw ConfigurationError.missingRequiredField("webhookToken (set NATIVE_AUDIO_BRIDGE_TOKEN or configure webhook_token)")
+        // Only require webhook config when actually using webhook output
+        if config.outputMode == .webhook || config.outputMode == .both {
+            guard !config.webhookURL.isEmpty else {
+                throw ConfigurationError.missingRequiredField("webhookURL")
+            }
+            guard let webhookURL = URL(string: config.webhookURL),
+                  webhookURL.scheme != nil else {
+                throw ConfigurationError.invalidValue(field: "webhookURL", reason: "must be a valid URL with scheme")
+            }
+            guard !config.webhookToken.isEmpty else {
+                throw ConfigurationError.missingRequiredField("webhookToken (set NATIVE_AUDIO_BRIDGE_TOKEN or configure webhook_token)")
+            }
         }
         guard config.silenceTimeoutMs > 0 else {
             throw ConfigurationError.invalidValue(field: "silenceTimeoutMs", reason: "must be greater than 0")
