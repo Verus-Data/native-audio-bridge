@@ -283,7 +283,7 @@ public final class AudioEngine {
 
     /// Get the name of a specific audio device by ID.
     public static func getDeviceName(deviceID: AudioDeviceID) -> String {
-        return getDeviceName(deviceID: deviceID)
+        return NativeAudioBridgeLibrary.getDeviceName(deviceID: deviceID)
     }
 
     /// Set the input device by name or numeric ID string.
