@@ -35,7 +35,14 @@ public final class SpeechRecognizer {
     }
 
     public func startStreaming(audioEngine: AVAudioEngine) throws {
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
+        guard let speechRecognizer else {
+            throw SpeechRecognizerError.notAvailable
+        }
+        
+        print("[SpeechRecognizer] Availability check: \(speechRecognizer.isAvailable)")
+        guard speechRecognizer.isAvailable else {
+            AppLogger.shared.error("Speech recognizer is not available. Check internet or speech assets.")
+            print("[SpeechRecognizer] ERROR: Not available!")
             throw SpeechRecognizerError.notAvailable
         }
 
@@ -43,8 +50,15 @@ public final class SpeechRecognizer {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        request.requiresOnDeviceRecognition = false
+        // NOTE: requiresOnDeviceRecognition disabled on macOS — local speech assets
+        // may not be present, causing silent failure (no transcripts, no errors).
+        #if !os(macOS)
+        request.requiresOnDeviceRecognition = true
+        #endif
         self.recognitionRequest = request
+
+        AppLogger.shared.info("Starting recognition task (on-device)...")
+        print("[SpeechRecognizer] Starting recognition task (on-device)...")
 
         let task = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
@@ -57,6 +71,8 @@ public final class SpeechRecognizer {
                     self.queue.async(flags: .barrier) { [weak self] in
                         self?.lastTranscript = transcript
                     }
+                    AppLogger.shared.info("Recognition result: isFinal=\(result.isFinal), transcript=\(transcript)")
+                    print("[SpeechRecognizer] Result: isFinal=\(result.isFinal), transcript='\(transcript)'")
                     if result.isFinal {
                         onFinal?(transcript)
                     } else {
@@ -64,6 +80,8 @@ public final class SpeechRecognizer {
                     }
                 }
                 if let error {
+                    AppLogger.shared.error("Recognition task error: \(error.localizedDescription)")
+                    print("[SpeechRecognizer] ERROR: \(error)")
                     onErr?(error)
                     self.stopStreamingInternal()
                 }

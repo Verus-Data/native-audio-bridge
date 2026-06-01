@@ -261,9 +261,15 @@ public final class AudioEngine {
 
     public var sampleRateValue: Double { sampleRate }
     public var outputAudioFormat: AVAudioFormat? { outputFormat }
+    public var inputAudioFormat: AVAudioFormat? { inputFormat }
+    private var onRawBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     public func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
         onAudioBuffer = handler
+    }
+
+    public func setOnRawBuffer(_ handler: @escaping (AVAudioPCMBuffer) -> Void) {
+        onRawBuffer = handler
     }
 
     // MARK: Device Listing & Selection (macOS)
@@ -394,6 +400,9 @@ public final class AudioEngine {
 
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
             guard let self, let conv = self.converter, let fromFormat = self.inputFormat else { return }
+            // Send raw buffer directly to speech recognizer
+            self.onRawBuffer?(buffer)
+            // Convert to 16kHz mono for command buffer storage
             self.processAudioBuffer(buffer, converter: conv, fromFormat: fromFormat, toFormat: desiredFormat)
         }
 

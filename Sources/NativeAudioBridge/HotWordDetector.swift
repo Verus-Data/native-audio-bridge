@@ -23,6 +23,8 @@ public final class HotWordDetector {
         let normalized = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
 
+        print("[HotWordDetector] Processing transcript: '\(normalized)'")
+
         let onHotWord = self.onHotWordDetected
         queue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
@@ -34,12 +36,14 @@ public final class HotWordDetector {
 
         if matchesHotWord(normalized) {
             state = .listening
+            print("[HotWordDetector] HOT WORD MATCHED!")
             onHotWord?()
             return true
         }
 
         if slidingWindowMatch() {
             state = .listening
+            print("[HotWordDetector] HOT WORD MATCHED (sliding window)!")
             onHotWord?()
             return true
         }

@@ -45,14 +45,17 @@ struct RunCommand: AsyncParsableCommand {
         }
         #endif
 
-        guard let config = AudioBridgeApp.checkConfigFile(configPath) else {
+        let resolvedConfigPath = configPath ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/native-audio-bridge/config.yaml").path
+        guard let config = AudioBridgeApp.checkConfigFile(resolvedConfigPath) else {
             throw ExitCode.failure
         }
 
         log.setLogLevel(config.logLevel)
 
         #if os(macOS)
-        if let deviceIdentifier = config.inputDevice ?? inputDevice {
+        let deviceIdentifier = config.inputDevice?.isEmpty == false ? config.inputDevice : inputDevice
+        if let deviceIdentifier, !deviceIdentifier.isEmpty {
             let audioEngine = AudioEngine()
             do {
                 try audioEngine.setInputDevice(identifier: deviceIdentifier)
@@ -161,48 +164,59 @@ struct RunCommand: AsyncParsableCommand {
         }
 
         log.info("Requesting microphone permission...")
+        print("[Bridge] Requesting microphone permission...")
         let micAuthorized = await requestMicrophonePermission()
         guard micAuthorized else {
-            log.error("Microphone permission denied. Exiting.")
+            print("[Bridge] ERROR: Microphone permission denied.")
             throw ExitCode.failure
         }
+        print("[Bridge] Microphone authorized.")
 
         log.info("Microphone authorized. Requesting speech recognition permission...")
+        print("[Bridge] Requesting speech recognition permission...")
         let speechAuthorized = await SpeechRecognizer.requestAuthorization()
         guard speechAuthorized else {
-            log.error("Speech recognition permission denied. Exiting.")
+            print("[Bridge] ERROR: Speech recognition permission denied.")
             throw ExitCode.failure
         }
+        print("[Bridge] Speech recognition authorized.")
 
         log.info("Speech recognition authorized. Starting audio engine...")
+        print("[Bridge] Starting audio engine...")
 
         do {
             try audioEngine.start()
+            print("[Bridge] Audio engine started successfully. Sample rate: \(audioEngine.sampleRateValue) Hz")
             log.info("Audio engine running. Sample rate: \(audioEngine.sampleRateValue) Hz")
             log.info("Listening for hot word \"\(config.hotWord)\"... Press Ctrl+C to stop.")
             stateManager.transition(to: .idle)
         } catch {
+            print("[Bridge] ERROR: Failed to start audio engine: \(error)")
             log.error("Failed to start audio engine: \(error.localizedDescription)")
             throw ExitCode.failure
         }
 
         do {
             if let engine = audioEngine.engine {
+                print("[Bridge] Wiring speech recognizer...")
+                audioEngine.setOnRawBuffer { buffer in
+                    speechRecognizer.appendBuffer(buffer)
+                }
                 try speechRecognizer.startStreaming(audioEngine: engine)
+                print("[Bridge] Speech recognizer started.")
                 audioEngine.setOnAudioBuffer { data in
-                    if let outFormat = audioEngine.outputAudioFormat,
-                       let pcmBuffer = data.toPCMBuffer(format: outFormat) {
-                        speechRecognizer.appendBuffer(pcmBuffer)
-                    }
                     if commandBuffer.capturing {
                         commandBuffer.append(data)
                     }
                 }
+                print("[Bridge] Audio buffer callback wired.")
                 log.info("Speech recognizer streaming started.")
             } else {
+                print("[Bridge] ERROR: Audio engine not initialized.")
                 log.error("Audio engine not initialized.")
             }
         } catch {
+            print("[Bridge] ERROR: Failed to start speech recognizer: \(error)")
             log.error("Failed to start speech recognizer: \(error.localizedDescription)")
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
         }
