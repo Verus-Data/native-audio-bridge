@@ -466,9 +466,11 @@ public final class AudioEngine {
         let data = Data(bytes: channelData, count: Int(convertedBuffer.frameLength) * MemoryLayout<Float>.size)
 
         let onBuffer = self.onAudioBuffer
+        let maxMemory = self.maxBufferMemoryMB
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
-            if self.currentBufferMemoryMB < self.maxBufferMemoryMB {
+            let currentMemory = self.audioBuffers.reduce(0) { $0 + $1.count } / (1024 * 1024)
+            if currentMemory < maxMemory {
                 self.audioBuffers.append(data)
             } else {
                 self.audioBuffers.removeFirst()
