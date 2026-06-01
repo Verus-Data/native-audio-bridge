@@ -458,7 +458,13 @@ public final class AudioEngine {
         ) else { return }
 
         var error: NSError?
-        let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+        var returnedBuffer = false
+        let status = converter.convert(to: convertedBuffer, error: &error) { inNumPackets, outStatus in
+            if returnedBuffer {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            returnedBuffer = true
             outStatus.pointee = .haveData
             return buffer
         }
