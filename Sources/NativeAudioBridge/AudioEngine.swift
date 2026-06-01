@@ -257,8 +257,10 @@ public final class AudioEngine {
     private var onAudioBuffer: (@Sendable (Data) -> Void)?
     private var converter: AVAudioConverter?
     private var inputFormat: AVAudioFormat?
+    private var outputFormat: AVAudioFormat?
 
     public var sampleRateValue: Double { sampleRate }
+    public var outputAudioFormat: AVAudioFormat? { outputFormat }
 
     public func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
         onAudioBuffer = handler
@@ -388,6 +390,7 @@ public final class AudioEngine {
             throw AudioError.engineStartFailed("Failed to create audio converter")
         }
         converter = conv
+        outputFormat = desiredFormat
 
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
             guard let self, let conv = self.converter, let fromFormat = self.inputFormat else { return }

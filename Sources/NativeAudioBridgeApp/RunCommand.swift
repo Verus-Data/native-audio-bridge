@@ -190,7 +190,8 @@ struct RunCommand: AsyncParsableCommand {
             if let engine = audioEngine.engine {
                 try speechRecognizer.startStreaming(audioEngine: engine)
                 audioEngine.setOnAudioBuffer { data in
-                    if let pcmBuffer = data.toPCMBuffer(format: engine.inputNode.outputFormat(forBus: 0)) {
+                    if let outFormat = audioEngine.outputAudioFormat,
+                       let pcmBuffer = data.toPCMBuffer(format: outFormat) {
                         speechRecognizer.appendBuffer(pcmBuffer)
                     }
                     if commandBuffer.capturing {
