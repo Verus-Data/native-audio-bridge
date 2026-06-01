@@ -22,6 +22,9 @@ struct RunCommand: AsyncParsableCommand {
     var inputDevice: String?
     #endif
 
+    @Flag(name: .long, help: "Simulate transcripts to test pipeline without audio hardware")
+    var simulateTranscripts: Bool = false
+
     func run() async throws {
         let log = AppLogger.shared
 
@@ -165,6 +168,61 @@ struct RunCommand: AsyncParsableCommand {
 
         log.info("Requesting microphone permission...")
         print("[Bridge] Requesting microphone permission...")
+
+        if simulateTranscripts {
+            print("[Bridge] SIMULATION MODE — bypassing audio hardware")
+            stateManager.transition(to: .idle)
+
+            let mockTranscripts = [
+                "some background noise",
+                "hey claw what's the weather",
+                "tell me the forecast",
+                "ok thanks",
+            ]
+
+            var capturedCommand: String? = nil
+
+            for transcript in mockTranscripts {
+                print("[Bridge] Simulated transcript: '\(transcript)'")
+                if !transcript.isEmpty {
+                    let detected = hotWordDetector.process(transcript: transcript)
+                    if detected {
+                        print("[Bridge] Hot word detected, capture started")
+                    } else if stateManager.state == .listening {
+                        capturedCommand = transcript
+                        print("[Bridge] Captured command text: '\(transcript)'")
+                    }
+                }
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+
+            // Simulate silence detection — dispatch the captured command
+            print("[Bridge] Simulating silence detection...")
+            stateManager.transition(to: .processing)
+            commandBuffer.stopCapture()
+
+            let transcript = capturedCommand ?? speechRecognizer.currentTranscript
+            guard let payload = commandProcessor.preparePayload(transcript: transcript) else {
+                print("[Bridge] Empty command after processing. Returning to idle.")
+                stateManager.transition(to: .idle)
+                hotWordDetector.reset()
+                print("[Bridge] Simulation complete. Exiting.")
+                return
+            }
+
+            stateManager.transition(to: .dispatching)
+            do {
+                try await outputManager.output(payload)
+                print("[Bridge] Command output successful")
+            } catch {
+                print("[Bridge] Command output failed: \(error)")
+            }
+            stateManager.transition(to: .idle)
+            hotWordDetector.reset()
+            print("[Bridge] Simulation complete. Exiting.")
+            return
+        }
+
         let micAuthorized = await requestMicrophonePermission()
         guard micAuthorized else {
             print("[Bridge] ERROR: Microphone permission denied.")

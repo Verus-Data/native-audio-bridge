@@ -23,6 +23,9 @@ public final class HotWordDetector {
         let normalized = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
 
+        // Do not re-fire if already in listening state
+        guard state == .idle else { return false }
+
         print("[HotWordDetector] Processing transcript: '\(normalized)'")
 
         let onHotWord = self.onHotWordDetected

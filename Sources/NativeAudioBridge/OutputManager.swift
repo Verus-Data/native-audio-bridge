@@ -27,14 +27,21 @@ public final class OutputManager {
         
         // Setup JSONL file if needed
         if mode == .jsonlFile || mode == .both {
-            let fileManager = FileManager.default
-            let docsURL = try fileManager.url(
-                for: .documentDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-            self.jsonlPath = docsURL.appendingPathComponent("native-audio-bridge-commands.jsonl")
+            let effectivePath = config.fileOutput.path.isEmpty || config.fileOutput.path == "-"
+                ? nil
+                : config.fileOutput.path
+            if let path = effectivePath {
+                self.jsonlPath = URL(fileURLWithPath: path)
+            } else {
+                let fileManager = FileManager.default
+                let docsURL = try fileManager.url(
+                    for: .documentDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
+                self.jsonlPath = docsURL.appendingPathComponent("native-audio-bridge-commands.jsonl")
+            }
         } else {
             self.jsonlPath = nil
         }
