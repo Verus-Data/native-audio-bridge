@@ -257,11 +257,19 @@ public final class AudioEngine {
     private var onAudioBuffer: (@Sendable (Data) -> Void)?
     private var converter: AVAudioConverter?
     private var inputFormat: AVAudioFormat?
+    private var outputFormat: AVAudioFormat?
 
     public var sampleRateValue: Double { sampleRate }
+    public var outputAudioFormat: AVAudioFormat? { outputFormat }
+    public var inputAudioFormat: AVAudioFormat? { inputFormat }
+    private var onRawBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     public func setOnAudioBuffer(_ handler: @escaping (Data) -> Void) {
         onAudioBuffer = handler
+    }
+
+    public func setOnRawBuffer(_ handler: @escaping (AVAudioPCMBuffer) -> Void) {
+        onRawBuffer = handler
     }
 
     // MARK: Device Listing & Selection (macOS)
@@ -283,7 +291,7 @@ public final class AudioEngine {
 
     /// Get the name of a specific audio device by ID.
     public static func getDeviceName(deviceID: AudioDeviceID) -> String {
-        return getDeviceName(deviceID: deviceID)
+        return NativeAudioBridgeLibrary.getDeviceName(deviceID: deviceID)
     }
 
     /// Set the input device by name or numeric ID string.
@@ -388,9 +396,13 @@ public final class AudioEngine {
             throw AudioError.engineStartFailed("Failed to create audio converter")
         }
         converter = conv
+        outputFormat = desiredFormat
 
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
             guard let self, let conv = self.converter, let fromFormat = self.inputFormat else { return }
+            // Send raw buffer directly to speech recognizer
+            self.onRawBuffer?(buffer)
+            // Convert to 16kHz mono for command buffer storage
             self.processAudioBuffer(buffer, converter: conv, fromFormat: fromFormat, toFormat: desiredFormat)
         }
 
@@ -455,7 +467,13 @@ public final class AudioEngine {
         ) else { return }
 
         var error: NSError?
-        let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+        var returnedBuffer = false
+        let status = converter.convert(to: convertedBuffer, error: &error) { inNumPackets, outStatus in
+            if returnedBuffer {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            returnedBuffer = true
             outStatus.pointee = .haveData
             return buffer
         }
@@ -466,9 +484,11 @@ public final class AudioEngine {
         let data = Data(bytes: channelData, count: Int(convertedBuffer.frameLength) * MemoryLayout<Float>.size)
 
         let onBuffer = self.onAudioBuffer
+        let maxMemory = self.maxBufferMemoryMB
         bufferQueue.async(flags: .barrier) { [weak self] in
             guard let self else { return }
-            if self.currentBufferMemoryMB < self.maxBufferMemoryMB {
+            let currentMemory = self.audioBuffers.reduce(0) { $0 + $1.count } / (1024 * 1024)
+            if currentMemory < maxMemory {
                 self.audioBuffers.append(data)
             } else {
                 self.audioBuffers.removeFirst()

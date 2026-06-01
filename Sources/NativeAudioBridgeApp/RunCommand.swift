@@ -22,6 +22,9 @@ struct RunCommand: AsyncParsableCommand {
     var inputDevice: String?
     #endif
 
+    @Flag(name: .long, help: "Simulate transcripts to test pipeline without audio hardware")
+    var simulateTranscripts: Bool = false
+
     func run() async throws {
         let log = AppLogger.shared
 
@@ -45,14 +48,17 @@ struct RunCommand: AsyncParsableCommand {
         }
         #endif
 
-        guard let config = AudioBridgeApp.checkConfigFile(configPath) else {
+        let resolvedConfigPath = configPath ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/native-audio-bridge/config.yaml").path
+        guard let config = AudioBridgeApp.checkConfigFile(resolvedConfigPath) else {
             throw ExitCode.failure
         }
 
         log.setLogLevel(config.logLevel)
 
         #if os(macOS)
-        if let deviceIdentifier = config.inputDevice ?? inputDevice {
+        let deviceIdentifier = config.inputDevice?.isEmpty == false ? config.inputDevice : inputDevice
+        if let deviceIdentifier, !deviceIdentifier.isEmpty {
             let audioEngine = AudioEngine()
             do {
                 try audioEngine.setInputDevice(identifier: deviceIdentifier)
@@ -160,44 +166,115 @@ struct RunCommand: AsyncParsableCommand {
             log.error("Speech recognition error: \(error.localizedDescription)")
         }
 
-        audioEngine.setOnAudioBuffer { data in
-            if commandBuffer.capturing {
-                commandBuffer.append(data)
+        log.info("Requesting microphone permission...")
+        print("[Bridge] Requesting microphone permission...")
+
+        if simulateTranscripts {
+            print("[Bridge] SIMULATION MODE — bypassing audio hardware")
+            stateManager.transition(to: .idle)
+
+            let mockTranscripts = [
+                "some background noise",
+                "hey claw what's the weather",
+                "tell me the forecast",
+                "ok thanks",
+            ]
+
+            var capturedCommand: String? = nil
+
+            for transcript in mockTranscripts {
+                print("[Bridge] Simulated transcript: '\(transcript)'")
+                if !transcript.isEmpty {
+                    let detected = hotWordDetector.process(transcript: transcript)
+                    if detected {
+                        print("[Bridge] Hot word detected, capture started")
+                    } else if stateManager.state == .listening {
+                        capturedCommand = transcript
+                        print("[Bridge] Captured command text: '\(transcript)'")
+                    }
+                }
+                try await Task.sleep(nanoseconds: 500_000_000)
             }
+
+            // Simulate silence detection — dispatch the captured command
+            print("[Bridge] Simulating silence detection...")
+            stateManager.transition(to: .processing)
+            commandBuffer.stopCapture()
+
+            let transcript = capturedCommand ?? speechRecognizer.currentTranscript
+            guard let payload = commandProcessor.preparePayload(transcript: transcript) else {
+                print("[Bridge] Empty command after processing. Returning to idle.")
+                stateManager.transition(to: .idle)
+                hotWordDetector.reset()
+                print("[Bridge] Simulation complete. Exiting.")
+                return
+            }
+
+            stateManager.transition(to: .dispatching)
+            do {
+                try await outputManager.output(payload)
+                print("[Bridge] Command output successful")
+            } catch {
+                print("[Bridge] Command output failed: \(error)")
+            }
+            stateManager.transition(to: .idle)
+            hotWordDetector.reset()
+            print("[Bridge] Simulation complete. Exiting.")
+            return
         }
 
-        log.info("Requesting microphone permission...")
         let micAuthorized = await requestMicrophonePermission()
         guard micAuthorized else {
-            log.error("Microphone permission denied. Exiting.")
+            print("[Bridge] ERROR: Microphone permission denied.")
             throw ExitCode.failure
         }
+        print("[Bridge] Microphone authorized.")
 
         log.info("Microphone authorized. Requesting speech recognition permission...")
+        print("[Bridge] Requesting speech recognition permission...")
         let speechAuthorized = await SpeechRecognizer.requestAuthorization()
         guard speechAuthorized else {
-            log.error("Speech recognition permission denied. Exiting.")
+            print("[Bridge] ERROR: Speech recognition permission denied.")
             throw ExitCode.failure
         }
+        print("[Bridge] Speech recognition authorized.")
 
         log.info("Speech recognition authorized. Starting audio engine...")
+        print("[Bridge] Starting audio engine...")
 
         do {
             try audioEngine.start()
+            print("[Bridge] Audio engine started successfully. Sample rate: \(audioEngine.sampleRateValue) Hz")
             log.info("Audio engine running. Sample rate: \(audioEngine.sampleRateValue) Hz")
             log.info("Listening for hot word \"\(config.hotWord)\"... Press Ctrl+C to stop.")
             stateManager.transition(to: .idle)
         } catch {
+            print("[Bridge] ERROR: Failed to start audio engine: \(error)")
             log.error("Failed to start audio engine: \(error.localizedDescription)")
             throw ExitCode.failure
         }
 
         do {
-            let nativeEngine = AVAudioEngine()
-            try nativeEngine.start()
-            try speechRecognizer.startStreaming(audioEngine: nativeEngine)
-            log.info("Speech recognizer streaming started.")
+            if let engine = audioEngine.engine {
+                print("[Bridge] Wiring speech recognizer...")
+                audioEngine.setOnRawBuffer { buffer in
+                    speechRecognizer.appendBuffer(buffer)
+                }
+                try speechRecognizer.startStreaming(audioEngine: engine)
+                print("[Bridge] Speech recognizer started.")
+                audioEngine.setOnAudioBuffer { data in
+                    if commandBuffer.capturing {
+                        commandBuffer.append(data)
+                    }
+                }
+                print("[Bridge] Audio buffer callback wired.")
+                log.info("Speech recognizer streaming started.")
+            } else {
+                print("[Bridge] ERROR: Audio engine not initialized.")
+                log.error("Audio engine not initialized.")
+            }
         } catch {
+            print("[Bridge] ERROR: Failed to start speech recognizer: \(error)")
             log.error("Failed to start speech recognizer: \(error.localizedDescription)")
             log.info("Running in audio-only mode (hot word detection via transcripts unavailable).")
         }
@@ -225,5 +302,20 @@ struct RunCommand: AsyncParsableCommand {
                 continuation.resume(returning: granted)
             }
         }
+    }
+}
+
+private extension Data {
+    func toPCMBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let frameLength = count / MemoryLayout<Float>.size
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameLength)) else {
+            return nil
+        }
+        buffer.frameLength = AVAudioFrameCount(frameLength)
+        withUnsafeBytes { rawBuf in
+            guard let base = rawBuf.baseAddress else { return }
+            buffer.floatChannelData?[0].update(from: base.assumingMemoryBound(to: Float.self), count: frameLength)
+        }
+        return buffer
     }
 }
